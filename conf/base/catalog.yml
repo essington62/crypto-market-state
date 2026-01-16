@@ -1,0 +1,7 @@
+binance_spot_ohlcv_daily_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/crypto/binance/ohlcv_daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy

@@ -1,0 +1,13 @@
+binance:
+  assets:
+    - BTCUSDT
+    - ETHUSDT
+    - BNBUSDT
+    - SOLUSDT
+    - ADAUSDT
+    - AVAXUSDT
+    - LINKUSDT
+    - XRPUSDT
+
+  interval: "1d"
+  start_date: "2020-01-01"
