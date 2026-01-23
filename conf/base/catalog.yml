@@ -1,6 +1,79 @@
+# =====================================================
+# ======================= L1 RAW ======================
+# =====================================================
+
+# ---------- CRYPTO / BINANCE ----------
 binance_spot_ohlcv_daily_raw:
-  type: kedro_datasets.partitions.PartitionedDataset
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
   path: data/01_raw/crypto/binance/ohlcv_daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# ---------- MACRO / FRED ----------
+fred_macro_raw:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/01_raw/macro/fred
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# ---------- MACRO / YAHOO FINANCE ----------
+yfinance_macro_raw:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/01_raw/macro/yfinance
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# =====================================================
+# ================== L2 INTERMEDIATE ==================
+# =====================================================
+
+# ---------- CRYPTO ----------
+crypto_ohlcv_daily_intermediate:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/02_intermediate/crypto/ohlcv_daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# ---------- MACRO (FRED + YFINANCE MERGED) ----------
+macro_intermediate:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/02_intermediate/macro
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# =====================================================
+# ==================== L3 PRIMARY =====================
+# =====================================================
+
+# ---------- CRYPTO FEATURES ----------
+crypto_ohlcv_daily_primary:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/03_primary/crypto/ohlcv_daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# ---------- MACRO FEATURES ----------
+macro_primary:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/03_primary/macro
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:

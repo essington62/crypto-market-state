@@ -1,6 +1,14 @@
-ipython>=8.10
-jupyterlab>=3.0
-notebook
-kedro~=1.1.1
+# Core
 python-binance>=1.0.19
 pandas>=2.0.0
+numpy>=1.26.0
+pyarrow>=14.0.0
+
+# Kedro
+kedro~=1.1.1
+kedro-datasets>=1.8.0
+
+# Dev / Exploration
+ipython>=8.10
+jupyterlab>=3.0
+notebook>=7.0

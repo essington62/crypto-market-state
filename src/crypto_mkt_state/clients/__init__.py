@@ -1,5 +1,6 @@
-"""API clients for external data sources."""
+"""
+API clients for external data sources.
 
-from .binance_client import fetch_spot_daily_klines
-
-__all__ = ["fetch_spot_daily_klines"]
+Clients must be imported explicitly to avoid side effects
+and unnecessary dependencies at import time.
+"""

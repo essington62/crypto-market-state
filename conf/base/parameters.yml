@@ -1,4 +1,10 @@
+# =====================================================
+# ====================== BINANCE ======================
+# =====================================================
 binance:
+  source: "binance"
+  market: "spot"
+
   assets:
     - BTCUSDT
     - ETHUSDT
@@ -11,3 +17,74 @@ binance:
 
   interval: "1d"
   start_date: "2020-01-01"
+
+
+# =====================================================
+# ======================== FRED =======================
+# =====================================================
+fred:
+  source: "fred"
+  start_date: "2000-01-01"
+
+  series:
+    # Monetary Policy / Rates
+    - id: FEDFUNDS
+      name: fed_funds_rate
+      category: monetary_policy
+
+    - id: DGS2
+      name: us_2y_yield
+      category: yield_curve
+
+    - id: DGS10
+      name: us_10y_yield
+      category: yield_curve
+
+    # Inflation
+    - id: CPIAUCSL
+      name: cpi
+      category: inflation
+
+    # Labor / Macro Stress
+    - id: UNRATE
+      name: unemployment_rate
+      category: labor_market
+
+    # Liquidity
+    - id: WALCL
+      name: fed_balance_sheet
+      category: liquidity
+
+
+# =====================================================
+# ===================== YFINANCE ======================
+# =====================================================
+yfinance:
+  source: "yfinance"
+  start_date: "2000-01-01"
+
+  assets:
+    # Equity Indices (Risk-On / Risk-Off)
+    - ticker: "^GSPC"
+      name: sp500
+      category: equity_index
+
+    - ticker: "^IXIC"
+      name: nasdaq
+      category: equity_index
+
+    # Rates & Bonds
+    - ticker: "^TNX"
+      name: us_10y_yield
+      category: rates
+
+    # FX / Dollar Strength
+    - ticker: "DX-Y.NYB"
+      name: dxy
+      category: fx
+
+    # Commodities / Inflation Hedge
+    - ticker: "GC=F"
+      name: gold
+      category: commodity
+
