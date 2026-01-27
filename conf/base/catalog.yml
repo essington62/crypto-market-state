@@ -46,10 +46,19 @@ crypto_ohlcv_daily_intermediate:
       compression: snappy
 
 
-# ---------- MACRO (FRED + YFINANCE MERGED) ----------
-macro_intermediate:
-  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/02_intermediate/macro
+# ---------- MACRO / FRED ----------
+fred_macro_intermediate:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/macro/fred
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# ---------- MACRO / YFINANCE ----------
+yfinance_macro_intermediate:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/macro/yfinance
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
