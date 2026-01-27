@@ -1,22 +1,36 @@
 from kedro.pipeline import Pipeline
 
-# -----------------------
-# L1 INGESTION
-# -----------------------
+# =====================================================
+# ==================== L1 INGESTION ===================
+# =====================================================
+
+# ---------- BINANCE ----------
+from crypto_mkt_state.pipelines.ingestion.binance.pipeline import (
+    create_pipeline as ingestion_binance_pipeline,
+)
+
+# ---------- FRED ----------
+from crypto_mkt_state.pipelines.ingestion.fred.pipeline import (
+    create_pipeline as ingestion_fred_pipeline,
+)
+
+# ---------- YFINANCE ----------
 from crypto_mkt_state.pipelines.ingestion.yfinance.pipeline import (
     create_pipeline as ingestion_yfinance_pipeline,
 )
 
-# -----------------------
-# L2 NORMALIZATION
-# -----------------------
+# =====================================================
+# ================== L2 NORMALIZATION =================
+# =====================================================
+
 from crypto_mkt_state.pipelines.normalization.crypto.pipeline import (
     create_pipeline as normalization_crypto_pipeline,
 )
 
-# -----------------------
-# L3 PRIMARY
-# -----------------------
+# =====================================================
+# ==================== L3 PRIMARY =====================
+# =====================================================
+
 from crypto_mkt_state.pipelines.primary.crypto.pipeline import (
     create_pipeline as primary_crypto_pipeline,
 )
@@ -27,6 +41,8 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines: dict[str, Pipeline] = {}
 
     # ---------- L1 ----------
+    pipelines["ingestion.binance"] = ingestion_binance_pipeline()
+    pipelines["ingestion.fred"] = ingestion_fred_pipeline()
     pipelines["ingestion.yfinance"] = ingestion_yfinance_pipeline()
 
     # ---------- L2 ----------
@@ -36,6 +52,7 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["primary.crypto"] = primary_crypto_pipeline()
 
     # ---------- DEFAULT ----------
+    # Default explícito: ingestion.yfinance (ajuste se quiser outro)
     pipelines["__default__"] = pipelines["ingestion.yfinance"]
 
     return pipelines
