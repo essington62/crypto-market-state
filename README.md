@@ -1,4 +1,151 @@
-L1 – Binance (Crypto Market Data)
+# Data Ingestion Layers
+
+## L1 – FRED (Macroeconomic Data)
+
+### Purpose
+The FRED L1 layer ingests raw macroeconomic time series that represent the structural state of the global and U.S. economy.
+
+These variables provide slow-moving, regime-defining signals that anchor financial markets across:
+- Growth vs. recession cycles
+- Inflationary vs. disinflationary regimes
+- Monetary policy stance
+- Long-term risk premia
+
+All series are configured via `parameters.yml`, ensuring transparency and reproducibility.
+
+### 📦 Macroeconomic Series Ingested (FRED)
+
+| Series | Category | What It Represents | Why It Matters |
+|--------|----------|-------------------|----------------|
+| **DGS10** | Rates | 10Y US Treasury yield | Benchmark for discount rates, equity valuation, and macro risk regimes. |
+| **DGS2** | Rates | 2Y US Treasury yield | Proxy for monetary policy expectations and short-term rates. |
+| **T10Y2Y** | Rates | Yield curve slope | Classic recession indicator and macro regime classifier. |
+| **CPIAUCSL** | Inflation | Consumer Price Index | Measures inflation pressure and policy constraint. |
+| **PCEPI** | Inflation | PCE inflation | Fed's preferred inflation gauge. |
+| **UNRATE** | Labor | Unemployment rate | Late-cycle stress and recession confirmation signal. |
+| **INDPRO** | Growth | Industrial production | Real economic activity and cyclical momentum. |
+| **PAYEMS** | Labor | Non-farm payrolls | Labor market strength and economic expansion proxy. |
+
+> ⚠️ **Note:** All FRED series are ingested as-is, without resampling, forward-filling, or interpolation.
+
+### 🧠 Series Selection Philosophy
+FRED series are selected to represent macro regime drivers, not short-term trading signals.
+
+#### 1️⃣ Structural, Not Tactical
+FRED data moves slowly but defines the boundary conditions under which markets operate.
+
+#### 2️⃣ Policy & Cycle Awareness
+Rates, inflation, and labor indicators jointly describe:
+- Policy flexibility
+- Risk-free rate dynamics
+- Economic overheating or contraction
+
+#### 3️⃣ Cross-Asset Relevance
+These variables influence:
+- Equity valuation
+- Bond duration risk
+- FX differentials
+- Crypto liquidity via global financial conditions
+
+### 🧱 L1 FRED Schema
+The L1 FRED layer preserves the raw FRED schema, enriched only with metadata.
+
+| Column | Description |
+|--------|-------------|
+| `date` | Observation date |
+| `value` | Raw series value |
+| `series_id` | FRED series identifier |
+| `asset` | Asset name |
+| `category` | Category (Rates, Inflation, etc.) |
+| `source` | Always `"fred"` |
+| `interval` | Always `"1d"` |
+| `ingestion_ts` | Timestamp of ingestion |
+
+### 🔄 Role in Higher Layers
+
+| Layer | Transformation |
+|-------|---------------|
+| **L2 (Normalization)** | Adds consistent metadata and cleans time indices |
+| **L3 (Primary Features)** | Generates statistical features (changes, rolling z-scores, percentiles) |
+| **L4 (Cross-Asset Layer)** | Combines macro regimes with market-based signals to:<br>• Detect risk-on / risk-off environments<br>• Filter false signals in high-volatility periods<br>• Condition model behavior on macro states |
+
+---
+
+## L1 – Yahoo Finance (Market & Risk Proxies)
+
+### Purpose
+The Yahoo Finance L1 layer ingests cross-asset market data that acts as a bridge between macro conditions and crypto markets.
+
+These assets represent global risk sentiment, capital flows, and financial stress, providing context that pure crypto data cannot capture alone.
+
+All assets are parameterized via `parameters.yml`.
+
+### 📦 Assets Ingested (Yahoo Finance)
+
+| Asset | Category | What It Represents | Why It Matters |
+|-------|----------|-------------------|----------------|
+| **S&P 500 (^GSPC)** | Equity Index | Global risk-on benchmark | Defines global equity regime and risk appetite |
+| **NASDAQ (^IXIC)** | Equity Index | Growth & liquidity sensitivity | Highly sensitive to rates, tech, and liquidity cycles |
+| **US 10Y Yield (^TNX)** | Rates | Market-based long-term rates | Forward-looking discount rate proxy |
+| **DXY (DX-Y.NYB)** | FX | US dollar strength | Global liquidity conditions and risk-off pressure |
+| **Gold (GC=F)** | Commodity | Inflation & stress hedge | Safe-haven demand and inflation expectations |
+| **VIX (^VIX)** | Volatility | Implied equity volatility | Canonical global risk & stress indicator |
+
+### 🧠 Asset Selection Philosophy
+Yahoo Finance assets are chosen as global state variables, not alpha signals.
+
+#### 1️⃣ Risk-On / Risk-Off Decomposition
+Equities, volatility, FX, and commodities jointly describe the market's risk posture.
+
+#### 2️⃣ Liquidity & Stress Sensitivity
+- Rising DXY + VIX → tightening financial conditions
+- Falling equities + rising volatility → risk-off regime
+
+#### 3️⃣ Crypto Spillover Channels
+Global markets often lead crypto during:
+- Liquidity shocks
+- Macro-driven selloffs
+- Policy regime changes
+
+### 🧱 L1 Yahoo Finance Schema
+Yahoo Finance data is ingested as daily OHLCV series with metadata.
+
+| Column | Description |
+|--------|-------------|
+| `date` | Trading date |
+| `open` | Opening price |
+| `high` | High price |
+| `low` | Low price |
+| `close` | Closing price |
+| `volume` | Trading volume |
+| `symbol` | Yahoo Finance symbol |
+| `asset` | Asset name |
+| `category` | Category (Equity, Rates, etc.) |
+| `source` | Always `"yfinance"` |
+| `interval` | Always `"1d"` |
+| `ingestion_ts` | Timestamp of ingestion |
+
+### 🔄 Role in Higher Layers
+
+| Layer | Transformation |
+|-------|---------------|
+| **L2 (Normalization)** | Ensures consistent schema across all market assets |
+| **L3 (Primary Features)** | Computes returns, volatility, rolling statistics, and relative state metrics |
+| **L4 (Cross-Asset Layer)** | Enables construction of:<br>• Global Risk Index<br>• Volatility-adjusted positioning signals<br>• Regime classifiers combining macro + markets + crypto |
+
+---
+
+## 📌 Architectural Summary
+
+| Layer | Role |
+|-------|------|
+| **L1** | Raw, source-faithful data ingestion |
+| **L2** | Schema normalization & metadata alignment |
+| **L3** | Per-asset statistical feature engineering |
+| **L4** | Cross-asset, regime-aware features |
+
+
+## L1 – Binance (Crypto Market Data)
 
 Purpose
 
