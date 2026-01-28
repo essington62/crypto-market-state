@@ -72,3 +72,28 @@ source = "binance"
 interval = "1d"
 ingestion_ts
 
+## Planned Extensions (Not Implemented Yet)
+
+The architecture supports future extensions without breaking existing pipelines:
+- Open Interest (OI)
+- Explicit Funding Rates
+- Long/Short Ratios
+- Stablecoin supply / dominance
+- Exchange inflow / outflow (on-chain)
+
+These signals would enter L1 or L2 only, never directly into L3/L4.
+
+## Connection to Higher Layers
+
+- L2 (Normalization)
+Standardizes schema, cleans timestamps, and attaches metadata.
+
+- L3 (Primary Features)
+Generates per-asset statistical features (volatility, z-scores, momentum).
+
+- L4 (Cross-Asset Layer)
+Combines Binance, Macro (FRED), and Market (Yahoo Finance) data to model:
+
+   - Risk-On / Risk-Off regimes
+   - Systemic stress
+   - Strategy gating and allocation logic
