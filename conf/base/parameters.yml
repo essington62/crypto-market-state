@@ -55,6 +55,18 @@ fred:
       name: fed_balance_sheet
       category: liquidity
 
+    # Growth
+    - id: INDPRO
+      name: industrial_production
+      category: growth
+
+    - id: PAYEMS
+      name: nonfarm_payrolls
+      category: growth
+
+    - id: GDPC1
+      name: real_gdp
+      category: growth
 
 # =====================================================
 # ===================== YFINANCE ======================
@@ -73,6 +85,11 @@ yfinance:
       name: nasdaq
       category: equity_index
 
+    # Volatility / Risk Aversion
+    - ticker: "^VIX"
+      name: vix
+      category: volatility
+
     # Rates & Bonds
     - ticker: "^TNX"
       name: us_10y_yield
@@ -88,3 +105,16 @@ yfinance:
       name: gold
       category: commodity
 
+
+# =====================================================
+# ===================== L4 THRESHOLDS =================
+# =====================================================
+
+l4:
+  thresholds:
+    vol_regime_z: 1.5
+
+  assets:
+    equity_proxy: sp500
+    vol_proxy: vix
+    dollar_proxy: dxy

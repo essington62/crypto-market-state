@@ -1,0 +1,8 @@
+l4:
+  thresholds:
+    vol_regime_z: 1.5
+
+  assets:
+    equity_proxy: sp500
+    vol_proxy: vix
+    dollar_proxy: dxy

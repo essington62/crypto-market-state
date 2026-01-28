@@ -96,3 +96,11 @@ yfinance_macro_primary:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
+
+# ---------- L4 CROSS-ASSET ----------
+cross_asset_features:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/cross_asset_features.parquet
+  save_args:
+    compression: snappy

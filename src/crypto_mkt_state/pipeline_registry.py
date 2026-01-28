@@ -46,6 +46,9 @@ from crypto_mkt_state.pipelines.primary.fred.pipeline import (
 from crypto_mkt_state.pipelines.primary.yfinance.pipeline import (
     create_pipeline as primary_yfinance_pipeline,
 )
+from crypto_mkt_state.pipelines.cross_asset.pipeline import (
+    create_pipeline as cross_asset_pipeline,
+)
 
 
 def register_pipelines() -> dict[str, Pipeline]:
@@ -66,6 +69,9 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["primary.crypto"] = primary_crypto_pipeline()
     pipelines["primary.fred"] = primary_fred_pipeline()
     pipelines["primary.yfinance"] = primary_yfinance_pipeline()
+
+    # ---------- L4 ----------
+    pipelines["cross_asset"] = cross_asset_pipeline()
 
     # ---------- DEFAULT ----------
     # Default explícito: ingestion.yfinance (ajuste se quiser outro)
