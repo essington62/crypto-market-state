@@ -79,10 +79,19 @@ crypto_ohlcv_daily_primary:
       compression: snappy
 
 
-# ---------- MACRO FEATURES ----------
-macro_primary:
+# ---------- MACRO / FRED ----------
+fred_macro_primary:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/03_primary/macro
+  path: data/03_primary/macro/fred
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# ---------- MACRO / YFINANCE ----------
+yfinance_macro_primary:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/03_primary/macro/yfinance
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:

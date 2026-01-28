@@ -40,6 +40,12 @@ from crypto_mkt_state.pipelines.normalization.yfinance.pipeline import (
 from crypto_mkt_state.pipelines.primary.crypto.pipeline import (
     create_pipeline as primary_crypto_pipeline,
 )
+from crypto_mkt_state.pipelines.primary.fred.pipeline import (
+    create_pipeline as primary_fred_pipeline,
+)
+from crypto_mkt_state.pipelines.primary.yfinance.pipeline import (
+    create_pipeline as primary_yfinance_pipeline,
+)
 
 
 def register_pipelines() -> dict[str, Pipeline]:
@@ -58,6 +64,8 @@ def register_pipelines() -> dict[str, Pipeline]:
 
     # ---------- L3 ----------
     pipelines["primary.crypto"] = primary_crypto_pipeline()
+    pipelines["primary.fred"] = primary_fred_pipeline()
+    pipelines["primary.yfinance"] = primary_yfinance_pipeline()
 
     # ---------- DEFAULT ----------
     # Default explícito: ingestion.yfinance (ajuste se quiser outro)
