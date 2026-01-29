@@ -15,7 +15,8 @@ def create_pipeline() -> Pipeline:
                 func=load_fred_l1,
                 inputs={
                     "series": "params:fred.series",
-                    "start_date": "params:fred.start_date",
+                    "start_date": "params:global.start_date",
+                    "interval": "params:global.interval",
                 },
                 outputs="fred_macro_raw",
                 name="load_fred_l1",

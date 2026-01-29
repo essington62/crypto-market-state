@@ -1,145 +1,225 @@
 """
 L3 primary feature engineering nodes for Yahoo Finance macro data.
 
-This module contains nodes that compute primary statistical features from L2
-intermediate data:
-- Price-based variations and returns
-- Rolling statistics (mean, std, z-scores, realized volatility)
-- Relative state (deviation from mean, percentile rank)
-- Volume-based normalization
+This module is split into two nodes with strictly separated responsibilities:
 
-No economic structural logic is applied here. Features are purely statistical.
-Each asset (symbol) is processed independently.
+1) build_yfinance_assets_primary_features
+   - Processes ONLY assets: source=="yfinance", category in {equity_index, commodity}.
+   - Features: return_*, rolling_std_*, zscore_*, momentum_* (only if in l3_semantic.assets).
+   - Does NOT compute value, delta_*, rolling_mean_63.
+
+2) build_yfinance_indices_primary_features
+   - Processes ONLY indices: source=="yfinance", category in {volatility, rates, fx}.
+   - Features: value, delta_1d, delta_21d, zscore_63, rolling_mean_63 (only if in l3_semantic.indices).
+   - Does NOT compute return_*, rolling_std_*, momentum_*, log_return_*.
+
+Both nodes use get_semantic_features(asset_name, semantic_config) and compute
+ONLY features explicitly listed in parameters.yml (l3_semantic).
 """
 
-from math import sqrt
+from __future__ import annotations
+
 from typing import Callable, Dict
 
-import numpy as np
 import pandas as pd
 
-
-# -------------------------------------------------------------------
-# Helpers
-# -------------------------------------------------------------------
-def _compute_rolling_zscore(series: pd.Series, window: int) -> pd.Series:
-    """
-    Compute rolling z-score: (value - rolling_mean) / rolling_std.
-    """
-    rolling_mean = series.rolling(window).mean()
-    rolling_std = series.rolling(window).std()
-    return (series - rolling_mean) / rolling_std
+from crypto_mkt_state.utils.utils_l3_semantic import get_semantic_features
 
 
-def _compute_realized_volatility(rolling_std: pd.Series) -> pd.Series:
-    """
-    Compute annualized realized volatility using sqrt(252).
-    """
-    return rolling_std * sqrt(252.0)
+# ---------------------------------------------------------------------------
+# Constants: filters by spec
+# ---------------------------------------------------------------------------
+_YF_ASSET_CATEGORIES = {"equity_index", "commodity"}
+_YF_INDEX_CATEGORIES = {"volatility", "rates", "fx"}
+_YF_SOURCE = "yfinance"
 
 
-def _compute_percentile_rank(series: pd.Series, window: int) -> pd.Series:
-    """
-    Compute rolling percentile rank (0–1) using a rolling window.
-    """
-    return series.rolling(window).apply(
-        lambda x: (x <= x.iloc[-1]).mean() if len(x) == window else np.nan,
-        raw=False,
-    )
+def _normalize_and_validate(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """Sort by date, drop duplicate dates, ensure required columns."""
+    df = df.copy()
+    df["date"] = pd.to_datetime(df["date"], utc=True)
+    df = df.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+    if "asset" not in df.columns:
+        raise ValueError(
+            f"YFinance partition {symbol} missing 'asset' column. "
+            "L2 normalization should have added this."
+        )
+    return df
 
 
-# -------------------------------------------------------------------
-# Main node
-# -------------------------------------------------------------------
-def build_yfinance_primary_features(
+def build_yfinance_assets_primary_features(
     data: Dict[str, Callable[[], pd.DataFrame]],
+    semantic_config: Dict,
 ) -> Dict[str, pd.DataFrame]:
     """
-    Build primary statistical features from Yahoo Finance L2 intermediate data.
+    Build L3 primary features for YFinance ASSETS only.
 
-    Features:
-    - Returns: 1d, 5d, 21d
-    - Log return (1d)
-    - Rolling mean, std, z-score (21, 63, 252)
-    - Annualized realized volatility (21, 63, 252)
-    - Relative price state vs 252d mean
-    - Rolling percentile rank (252)
-    - Volume normalization (mean and z-score, 21)
+    Filter: source == "yfinance", category in {equity_index, commodity}.
+    Examples: sp500, nasdaq, gold.
 
-    The function is pure:
-    - No filesystem access
-    - No Kedro datasets
-    - No resampling or forward-fill
-    - No cross-asset logic
+    Features (only if listed in l3_semantic.assets[asset].features):
+    - return_1d, return_5d, return_21d
+    - rolling_std_21, rolling_std_63
+    - zscore_21, zscore_63
+    - momentum_21, momentum_63
+
+    This node does NOT compute: value, delta_1d, delta_21d, rolling_mean_63.
     """
-    primary_features: Dict[str, pd.DataFrame] = {}
+    output: Dict[str, pd.DataFrame] = {}
 
     for symbol, loader in data.items():
-        # Support both callable loaders and direct DataFrames
-        df = loader() if callable(loader) else loader  # type: ignore[assignment]
+        df = loader() if callable(loader) else loader
+        if df is None or df.empty:
+            continue
 
-        # Defensive copy
-        df_features = df.copy()
+        df = _normalize_and_validate(df, symbol)
+        source = str(df["source"].iloc[0]).strip().lower() if "source" in df.columns else ""
+        category = str(df["category"].iloc[0]).strip().lower() if "category" in df.columns else ""
 
-        # Ensure clean time axis
-        df_features = df_features.sort_values("date")
-        df_features = df_features.drop_duplicates(subset=["date"], keep="last")
+        if source != _YF_SOURCE or category not in _YF_ASSET_CATEGORIES:
+            continue
 
-        close = df_features["close"]
-        volume = df_features["volume"]
-
-        # ===============================================================
-        # 1. RETURNS
-        # ===============================================================
-        df_features["return_1d"] = close.pct_change(1, fill_method=None)
-        df_features["return_5d"] = close.pct_change(5, fill_method=None)
-        df_features["return_21d"] = close.pct_change(21, fill_method=None)
-
-        ratio = close / close.shift(1)
-        df_features["log_return_1d"] = np.where(
-            ratio > 0,
-            np.log(ratio),
-            np.nan,
-        )
-
-        # ===============================================================
-        # 2. ROLLING STATISTICS (close)
-        # ===============================================================
-        for window in (21, 63, 252):
-            df_features[f"rolling_mean_{window}"] = close.rolling(window).mean()
-            df_features[f"rolling_std_{window}"] = close.rolling(window).std()
-            df_features[f"zscore_{window}"] = _compute_rolling_zscore(
-                close, window=window
+        asset_name = str(df["asset"].iloc[0])
+        try:
+            features_allowed = get_semantic_features(
+                asset_name=asset_name,
+                semantic_config=semantic_config,
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"YFinance asset partition {symbol} (asset={asset_name}): {e}"
             )
 
-        # ===============================================================
-        # 3. REALIZED VOLATILITY
-        # ===============================================================
-        for window in (21, 63, 252):
-            df_features[f"realized_vol_{window}"] = _compute_realized_volatility(
-                df_features[f"rolling_std_{window}"]
+        if "close" not in df.columns:
+            output[symbol] = df
+            continue
+
+        close = df["close"]
+
+        # ---- Returns (assets only) ----
+        if "return_1d" in features_allowed:
+            df["return_1d"] = close.pct_change(1, fill_method=None)
+        if "return_5d" in features_allowed:
+            df["return_5d"] = close.pct_change(5, fill_method=None)
+        if "return_21d" in features_allowed:
+            df["return_21d"] = close.pct_change(21, fill_method=None)
+
+        # ---- Volatility (rolling std of returns) ----
+        if "rolling_std_21" in features_allowed:
+            tmp_ret = close.pct_change(1, fill_method=None)
+            df["rolling_std_21"] = tmp_ret.rolling(21).std()
+        if "rolling_std_63" in features_allowed:
+            tmp_ret = close.pct_change(1, fill_method=None)
+            df["rolling_std_63"] = tmp_ret.rolling(63).std()
+
+        # ---- Z-scores (level) ----
+        if "zscore_21" in features_allowed:
+            mean_21 = close.rolling(21).mean()
+            std_21 = close.rolling(21).std()
+            df["zscore_21"] = (close - mean_21) / std_21
+        if "zscore_63" in features_allowed:
+            mean_63 = close.rolling(63).mean()
+            std_63 = close.rolling(63).std()
+            df["zscore_63"] = (close - mean_63) / std_63
+
+        # ---- Momentum ----
+        if "momentum_21" in features_allowed:
+            df["momentum_21"] = close / close.shift(21) - 1
+        if "momentum_63" in features_allowed:
+            df["momentum_63"] = close / close.shift(63) - 1
+
+        output[symbol] = df
+
+    return output
+
+
+def build_yfinance_indices_primary_features(
+    data: Dict[str, Callable[[], pd.DataFrame]],
+    semantic_config: Dict,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Build L3 primary features for YFinance INDICES only.
+
+    Filter: source == "yfinance", category in {volatility, rates, fx}.
+    Examples: vix, dxy, us_10y_yield (from YFinance).
+
+    Features (only if listed in l3_semantic.indices[asset].features):
+    - value (level = close)
+    - delta_1d, delta_21d
+    - zscore_63
+    - rolling_mean_63
+
+    This node does NOT compute: return_*, rolling_std_*, momentum_*, log_return_*.
+    VIX and other indices never get percent return features.
+    """
+    output: Dict[str, pd.DataFrame] = {}
+
+    for symbol, loader in data.items():
+        df = loader() if callable(loader) else loader
+        if df is None or df.empty:
+            continue
+
+        df = _normalize_and_validate(df, symbol)
+        source = str(df["source"].iloc[0]).strip().lower() if "source" in df.columns else ""
+        category = str(df["category"].iloc[0]).strip().lower() if "category" in df.columns else ""
+
+        if source != _YF_SOURCE or category not in _YF_INDEX_CATEGORIES:
+            continue
+
+        asset_name = str(df["asset"].iloc[0])
+        try:
+            features_allowed = get_semantic_features(
+                asset_name=asset_name,
+                semantic_config=semantic_config,
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"YFinance index partition {symbol} (asset={asset_name}): {e}"
             )
 
-        # ===============================================================
-        # 4. RELATIVE STATE
-        # ===============================================================
-        df_features["price_minus_mean_252"] = (
-            close - df_features["rolling_mean_252"]
-        )
+        if "close" not in df.columns:
+            output[symbol] = df
+            continue
 
-        df_features["percentile_rank_252"] = _compute_percentile_rank(
-            close, window=252
-        )
+        close = df["close"]
 
-        # ===============================================================
-        # 5. VOLUME FEATURES
-        # ===============================================================
-        df_features["volume_mean_21"] = volume.rolling(21).mean()
-        volume_std_21 = volume.rolling(21).std()
-        df_features["volume_zscore_21"] = (
-            volume - df_features["volume_mean_21"]
-        ) / volume_std_21
+        # ---- Level (index-only) ----
+        if "value" in features_allowed:
+            df["value"] = close
 
-        primary_features[symbol] = df_features
+        # ---- Deltas (index-only) ----
+        if "delta_1d" in features_allowed:
+            df["delta_1d"] = close.diff(1)
+        if "delta_21d" in features_allowed:
+            df["delta_21d"] = close.diff(21)
 
-    return primary_features
+        # ---- Z-score and rolling mean (index-only) ----
+        if "zscore_63" in features_allowed:
+            mean_63 = close.rolling(63).mean()
+            std_63 = close.rolling(63).std()
+            df["zscore_63"] = (close - mean_63) / std_63
+        if "rolling_mean_63" in features_allowed:
+            df["rolling_mean_63"] = close.rolling(63).mean()
+
+        output[symbol] = df
+
+    return output
+
+
+def merge_yfinance_primary_partitions(
+    assets_data: Dict[str, pd.DataFrame],
+    indices_data: Dict[str, pd.DataFrame],
+) -> Dict[str, pd.DataFrame]:
+    """
+    Merge asset and index L3 partitions into a single dict for downstream (e.g. L4).
+
+    Keys are partition IDs (e.g. symbol); no key overlap between assets and indices.
+    Accepts either Dict[str, pd.DataFrame] or Dict[str, Callable] (lazy load).
+    """
+    def _ensure_df(v):
+        return v() if callable(v) else v
+
+    out = {k: _ensure_df(v) for k, v in assets_data.items()}
+    for k, v in indices_data.items():
+        out[k] = _ensure_df(v)
+    return out

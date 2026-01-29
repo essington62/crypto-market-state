@@ -1,40 +1,95 @@
-"""
-Kedro node for FRED L1 ingestion.
-
-Thin wrapper over the FRED client.
-No business logic, no transformation.
-"""
+from __future__ import annotations
 
 from typing import Dict, List, Optional
-
 import pandas as pd
 
 from crypto_mkt_state.clients.fred_client import fetch_fred_batch
+from crypto_mkt_state.utils.utils_temporal import enforce_l1_temporal_contract
+
+
+from datetime import datetime, timezone
+
+
+def expand_monthly_to_daily(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Expand monthly macro series to daily frequency via forward-fill,
+    replicating the last known value up to TODAY (UTC).
+
+    This represents macro STATE until the next official release.
+    """
+    df = df.copy().sort_values("date")
+
+    start = df["date"].min()
+    end = pd.Timestamp(datetime.now(tz=timezone.utc).date(), tz="UTC")
+
+    daily_index = pd.date_range(
+        start=start,
+        end=end,
+        freq="D",
+        tz="UTC",
+    )
+
+    return (
+        df.set_index("date")
+        .reindex(daily_index, method="ffill")
+        .reset_index()
+        .rename(columns={"index": "date"})
+    )
+
 
 
 def load_fred_l1(
     series: List[dict],
     start_date: str,
+    interval: str,
     end_date: Optional[str] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
-    Load FRED data for multiple series (L1 raw).
+    L1 ingestion for FRED macro data.
 
-    Args:
-        series:
-            List of dicts from parameters.yml (expects key 'id').
-        start_date:
-            Observation start date (YYYY-MM-DD).
-        end_date:
-            Optional observation end date (YYYY-MM-DD).
-
-    Returns:
-        Dict[series_id, DataFrame] compatible with PartitionedDataset.
+    Contract:
+    - API already receives global.start_date
+    - L1 validates and enforces the temporal cut
+    - Monthly data expanded to daily macro state
     """
-    series_ids = [s["id"] for s in series]
 
-    return fetch_fred_batch(
-        series_ids=series_ids,
-        start_date=start_date,
+    raw = fetch_fred_batch(
+        series_ids=[s["id"] for s in series],
+        start_date=start_date,   # ✅ CORTE JÁ NA API
         end_date=end_date,
     )
+
+    output: Dict[str, pd.DataFrame] = {}
+
+    for cfg in series:
+        series_id = cfg["id"]
+        df = raw.get(series_id)
+
+        if df is None or df.empty:
+            output[series_id] = df
+            continue
+
+        df = df.copy()
+        df["date"] = pd.to_datetime(df["date"], utc=True)
+        df = df.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+
+        # ✅ SEGURANÇA: enforce cut novamente
+        df = enforce_l1_temporal_contract(
+            df=df,
+            start_date=start_date,
+            interval=interval,
+            assert_daily=False,
+        )
+
+        if df.empty:
+            output[series_id] = df
+            continue
+
+        # ✅ EXPANSÃO MENSAL → DIÁRIO
+        df_daily = expand_monthly_to_daily(df)
+
+        output[series_id] = df_daily
+
+    return output

@@ -15,7 +15,8 @@ def create_pipeline() -> Pipeline:
                 func=load_binance_ohlcv_daily,
                 inputs={
                     "assets": "params:binance.assets",
-                    "start_date": "params:binance.start_date",
+                    "start_date": "params:global.start_date",
+                    "interval": "params:global.interval",
                 },
                 outputs="binance_spot_ohlcv_daily_raw",
                 name="load_binance_ohlcv_daily",

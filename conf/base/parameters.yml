@@ -1,4 +1,13 @@
 # =====================================================
+# ===================== GLOBAL ========================
+# =====================================================
+global:
+  start_date: "2020-10-01"
+  interval: "1d"
+  timezone: "UTC"
+
+
+# =====================================================
 # ====================== BINANCE ======================
 # =====================================================
 binance:
@@ -15,19 +24,14 @@ binance:
     - LINKUSDT
     - XRPUSDT
 
-  interval: "1d"
-  start_date: "2020-01-01"
-
 
 # =====================================================
 # ======================== FRED =======================
 # =====================================================
 fred:
   source: "fred"
-  start_date: "2000-01-01"
 
   series:
-    # Monetary Policy / Rates
     - id: FEDFUNDS
       name: fed_funds_rate
       category: monetary_policy
@@ -40,22 +44,18 @@ fred:
       name: us_10y_yield
       category: yield_curve
 
-    # Inflation
     - id: CPIAUCSL
       name: cpi
       category: inflation
 
-    # Labor / Macro Stress
     - id: UNRATE
       name: unemployment_rate
       category: labor_market
 
-    # Liquidity
     - id: WALCL
       name: fed_balance_sheet
       category: liquidity
 
-    # Growth
     - id: INDPRO
       name: industrial_production
       category: growth
@@ -64,19 +64,14 @@ fred:
       name: nonfarm_payrolls
       category: growth
 
-    - id: GDPC1
-      name: real_gdp
-      category: growth
 
 # =====================================================
 # ===================== YFINANCE ======================
 # =====================================================
 yfinance:
   source: "yfinance"
-  start_date: "2000-01-01"
 
   assets:
-    # Equity Indices (Risk-On / Risk-Off)
     - ticker: "^GSPC"
       name: sp500
       category: equity_index
@@ -85,36 +80,342 @@ yfinance:
       name: nasdaq
       category: equity_index
 
-    # Volatility / Risk Aversion
     - ticker: "^VIX"
       name: vix
       category: volatility
 
-    # Rates & Bonds
-    - ticker: "^TNX"
-      name: us_10y_yield
-      category: rates
-
-    # FX / Dollar Strength
     - ticker: "DX-Y.NYB"
       name: dxy
       category: fx
 
-    # Commodities / Inflation Hedge
     - ticker: "GC=F"
       name: gold
       category: commodity
 
 
 # =====================================================
-# ===================== L4 THRESHOLDS =================
+# ==================== L3 SEMANTIC ====================
 # =====================================================
+# Contrato explícito de features por ativo / índice
+# Qualquer asset fora daqui gera erro (fail fast)
+
+l3_semantic:
+
+  # ===================== ATIVOS ======================
+  assets:
+
+    # ---------- CRYPTO ----------
+    btc:
+      source: binance
+      category: crypto
+      features: &crypto_features
+        - return_1d
+        - return_5d
+        - return_21d
+        - rolling_std_21
+        - rolling_std_63
+        - zscore_21
+        - zscore_63
+        - momentum_21
+        - momentum_63
+
+    eth:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+    ada:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+    sol:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+    bnb:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+    avax:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+    link:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+    xrp:
+      source: binance
+      category: crypto
+      features: *crypto_features
+
+
+    # ---------- RISK ASSETS (YFINANCE) ----------
+    sp500:
+      source: yfinance
+      category: equity_index
+      features:
+        - return_1d
+        - return_5d
+        - return_21d
+        - rolling_std_21
+        - rolling_std_63
+        - zscore_21
+        - zscore_63
+        - momentum_21
+        - momentum_63
+
+    nasdaq:
+      source: yfinance
+      category: equity_index
+      features:
+        - return_1d
+        - return_5d
+        - return_21d
+        - rolling_std_21
+        - rolling_std_63
+        - zscore_21
+        - zscore_63
+        - momentum_21
+        - momentum_63
+
+    gold:
+      source: yfinance
+      category: commodity
+      features:
+        - return_1d
+        - return_21d
+        - rolling_std_63
+        - zscore_63
+
+
+  # ===================== ÍNDICES =====================
+  indices:
+
+    # ---------- YIELD CURVE ----------
+    us_2y_yield:
+      source: fred
+      category: yield_curve
+      features:
+        - value
+        - delta_1d
+        - delta_21d
+        - zscore_63
+
+    us_10y_yield:
+      source: fred
+      category: yield_curve
+      features:
+        - value
+        - delta_1d
+        - delta_21d
+        - zscore_63
+
+
+    # ---------- VOL / FX ----------
+    vix:
+      source: yfinance
+      category: volatility
+      features:
+        - value
+        - delta_1d
+        - delta_21d
+        - zscore_63
+        - rolling_mean_63
+
+    dxy:
+      source: yfinance
+      category: fx
+      features:
+        - value
+        - delta_1d
+        - delta_21d
+        - zscore_63
+        - rolling_mean_63
+
+
+    # ---------- MACRO ----------
+    fed_funds_rate:
+      source: fred
+      category: monetary_policy
+      features:
+        - value
+        - delta_21d
+        - zscore_63
+
+    cpi:
+      source: fred
+      category: inflation
+      features:
+        - value
+        - delta_21d
+        - zscore_63
+        - rolling_mean_63
+
+    unemployment_rate:
+      source: fred
+      category: labor_market
+      features:
+        - value
+        - delta_21d
+        - zscore_63
+
+    fed_balance_sheet:
+      source: fred
+      category: liquidity
+      features:
+        - value
+        - delta_21d
+        - zscore_63
+
+    industrial_production:
+      source: fred
+      category: growth
+      features:
+        - value
+        - delta_21d
+        - zscore_63
+
+    nonfarm_payrolls:
+      source: fred
+      category: growth
+      features:
+        - value
+        - delta_21d
+        - zscore_63
+
+
+  # ===================== CLASSES SEMÂNTICAS =====================
+  overrides:
+
+    btc:
+      class: risk_asset
+    eth:
+      class: risk_asset
+    sp500:
+      class: risk_asset
+    nasdaq:
+      class: risk_asset
+
+    gold:
+      class: defensive_asset
+
+    vix:
+      class: volatility_index
+    dxy:
+      class: dollar_index
+
+    cpi:
+      class: inflation_index
+    fed_funds_rate:
+      class: rates_index
+    us_2y_yield:
+      class: rates_index
+    us_10y_yield:
+      class: rates_index
+
+
+# =====================================================
+# ========================= L4 ========================
+# =====================================================
+# Cross-asset macro regime layer
+# Consome APENAS índices (L3 indices)
+# Assets aparecem apenas como leitura posterior (não proxy)
 
 l4:
-  thresholds:
-    vol_regime_z: 1.5
 
-  assets:
-    equity_proxy: sp500
-    vol_proxy: vix
-    dollar_proxy: dxy
+  # ---------------------------------------------------
+  # 1. PROXIES CANÔNICOS (SOMENTE ÍNDICES)
+  # ---------------------------------------------------
+  proxies:
+    volatility: vix
+    dollar: dxy
+    rates_long: us_10y_yield
+    rates_short: us_2y_yield
+    inflation: cpi
+
+
+  # ---------------------------------------------------
+  # 2. REGIMES MACRO
+  # ---------------------------------------------------
+  regimes:
+
+    volatility:
+      source: vix
+      signal: zscore_63
+      high_threshold: 1.5
+      low_threshold: -1.0
+
+    dollar:
+      source: dxy
+      signal: zscore_63
+      strong_threshold: 1.0
+      weak_threshold: -1.0
+
+    rates:
+      source: us_10y_yield
+      signal: delta_21d
+      rising_threshold: 0.10
+      falling_threshold: -0.10
+
+    inflation:
+      source: cpi
+      signal: zscore_63
+      high_threshold: 1.0
+
+
+  # ---------------------------------------------------
+  # 3. ASSET LEITURA (NÃO DEFINE REGIME)
+  # ---------------------------------------------------
+  asset_signals:
+
+    relative_to_equity:
+      compare_against: sp500
+
+    defensive_assets:
+      - gold
+
+    risk_assets:
+      - btc
+      - eth
+      - sp500
+      - nasdaq
+
+
+  # ---------------------------------------------------
+  # 4. FLAGS INTERPRETÁVEIS
+  # ---------------------------------------------------
+  flags:
+
+    risk_off:
+      conditions:
+        - volatility.high
+        - dollar.strong
+
+    risk_on:
+      conditions:
+        - volatility.low
+        - dollar.weak
+
+    tightening:
+      conditions:
+        - rates.rising
+        - inflation.high
+
+    easing:
+      conditions:
+        - rates.falling
+
+
+  # ---------------------------------------------------
+  # 5. CONTRATO DE SEGURANÇA
+  # ---------------------------------------------------
+  validation:
+    require_all_proxies: true
+    fail_on_missing_features: true
+    allow_partial_history: true

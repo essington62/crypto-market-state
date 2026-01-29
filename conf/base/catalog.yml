@@ -57,12 +57,13 @@ fred_macro_intermediate:
 
 # ---------- MACRO / YFINANCE ----------
 yfinance_macro_intermediate:
-  type: kedro_datasets.partitions.PartitionedDataset
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
   path: data/02_intermediate/macro/yfinance
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
 
 
 # =====================================================
@@ -89,13 +90,29 @@ fred_macro_primary:
       compression: snappy
 
 # ---------- MACRO / YFINANCE ----------
-yfinance_macro_primary:
+yfinance_assets_primary:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/03_primary/macro/yfinance
+  path: data/03_primary/macro/yfinance_assets
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
+yfinance_indices_primary:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/03_primary/macro/yfinance_indices
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# yfinance_macro_primary:
+#   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+#   path: data/03_primary/macro/yfinance
+#   dataset:
+#     type: kedro_datasets.pandas.ParquetDataset
+#     save_args:
+#       compression: snappy
 
 
 # ---------- L4 CROSS-ASSET ----------

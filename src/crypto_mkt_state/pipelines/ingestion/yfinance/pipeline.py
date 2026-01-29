@@ -17,7 +17,8 @@ def create_pipeline() -> Pipeline:
                 func=load_yfinance_l1,
                 inputs={
                     "assets": "params:yfinance.assets",
-                    "start_date": "params:yfinance.start_date",
+                    "start_date": "params:global.start_date",
+                    "interval": "params:global.interval",
                 },
                 outputs="yfinance_macro_raw",
                 name="load_yfinance_l1",

@@ -1,44 +1,36 @@
 """
-L4 cross-asset feature engineering nodes.
+L4 cross-asset regime layer.
 
-This module builds a single, non-partitioned dataset of global market state
-features by combining:
-- FRED macro series (rates, inflation, growth, liquidity)
-- Yahoo Finance macro assets (equity indices, VIX, DXY, gold)
+This module does NOT compute any new statistics. It:
+- Reads existing L3 columns (from FRED and YFinance primary)
+- Validates that all l4.proxies exist and required signal columns are present
+- Builds regime categorical/boolean columns from params:l4.regimes (thresholds only)
+- Joins everything by date (inner join)
 
-The goal is to produce one row per date describing the market regime in terms of:
-- Risk / stress
-- Liquidity / dollar
-- Macro regime (rates, inflation, growth)
-- Cross-asset relationships
-- Volatility regime
-
-Design:
-- Pure functions (no IO, no Kedro Dataset usage)
-- No resampling, no forward-fill, no timezone changes
-- Inner joins on date only
-- NaNs are allowed (burn-in, missing assets)
+Contract:
+- No rolling_*, zscore_*, return_*, volatility_* calculations
+- Fail-fast if any proxy or required feature is missing
+- All logic driven by params:l4 (proxies, regimes with source/signal/thresholds)
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
-import numpy as np
 import pandas as pd
 
 
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Partition loading
+# ---------------------------------------------------------------------------
 def _load_partition_map(
-    data: Dict[str, Callable[[], pd.DataFrame]],
+    data: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
 ) -> Dict[str, pd.DataFrame]:
     """
-    Load a PartitionedDataset-like mapping into a dict[asset, DataFrame].
+    Load a PartitionedDataset-like mapping into a dict[asset_name, DataFrame].
 
-    Supports both callables and direct DataFrames.
-    Ensures defensive copy, sorted dates and no duplicate dates.
+    Keys are taken from df["asset"].iloc[0] so that FRED and YFinance
+    partitions are indexed by canonical asset name (e.g. vix, sp500, cpi).
     """
     by_asset: Dict[str, pd.DataFrame] = {}
 
@@ -46,259 +38,217 @@ def _load_partition_map(
         df = loader() if callable(loader) else loader
         if df is None or df.empty:
             continue
-
         df_norm = (
             df.copy()
             .sort_values("date")
             .drop_duplicates(subset=["date"], keep="last")
         )
-
-        asset = str(df_norm["asset"].iloc[0])
+        asset = str(df_norm["asset"].iloc[0]).strip().lower()
         by_asset[asset] = df_norm
 
     return by_asset
 
 
+def _safe_get_asset(
+    data: Dict[str, pd.DataFrame],
+    asset_name: str,
+    context: str = "L4",
+) -> pd.DataFrame:
+    """
+    Return the DataFrame for the given asset. Raise ValueError if missing.
+    """
+    key = asset_name.strip().lower()
+    if key not in data:
+        available = sorted(data.keys())
+        raise ValueError(
+            f"{context}: required asset '{asset_name}' not found in L3 data. "
+            f"Available assets: {available}"
+        )
+    return data[key]
+
+
+def _validate_required_columns(
+    df: pd.DataFrame,
+    columns: List[str],
+    asset_name: str,
+) -> None:
+    """Raise ValueError if any required column is missing."""
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"L4: asset '{asset_name}' is missing required column(s): {missing}. "
+            f"Available columns: {sorted(df.columns.tolist())}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regime helpers (threshold-based only; no new statistics)
+# ---------------------------------------------------------------------------
+def _compute_ternary_regime(
+    series: pd.Series,
+    high_threshold: float,
+    low_threshold: float,
+    high_label: str = "high",
+    low_label: str = "low",
+    neutral_label: str = "neutral",
+) -> pd.Series:
+    """
+    Map a numeric series to a categorical regime: high, neutral, or low.
+
+    Above high_threshold -> high_label; below low_threshold -> low_label; else neutral.
+    NaN in input remains NaN in output.
+    """
+    out = pd.Series(index=series.index, dtype=object)
+    out.loc[series > high_threshold] = high_label
+    out.loc[series < low_threshold] = low_label
+    out.loc[(series >= low_threshold) & (series <= high_threshold)] = neutral_label
+    out.loc[series.isna()] = pd.NA
+    return out
+
+
+def _compute_binary_regime(
+    series: pd.Series,
+    threshold: float,
+    high_label: str = "high",
+    neutral_label: str = "neutral",
+) -> pd.Series:
+    """
+    Map a numeric series to a binary regime: above threshold -> high, else neutral.
+    """
+    out = pd.Series(index=series.index, dtype=object)
+    out.loc[series > threshold] = high_label
+    out.loc[series <= threshold] = neutral_label
+    out.loc[series.isna()] = pd.NA
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Merge by date (inner join)
+# ---------------------------------------------------------------------------
 def _merge_on_date(
     base: Optional[pd.DataFrame],
     df: pd.DataFrame,
     columns: Dict[str, str],
 ) -> pd.DataFrame:
     """
-    Merge selected columns from df into base using inner join on date.
+    Merge selected columns from df into base on date (inner join).
     """
+    # date entra uma única vez, sempre
     subset = df[["date", *columns.keys()]].rename(columns=columns)
+    subset = subset.loc[:, ~subset.columns.duplicated()]
 
     if base is None:
         return subset.copy()
 
+    base = base.loc[:, ~base.columns.duplicated()]
     return base.merge(subset, on="date", how="inner")
 
 
-# ---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
 # Main node
-# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 def build_cross_asset_features(
-    fred: Dict[str, Callable[[], pd.DataFrame]],
-    yfinance: Dict[str, Callable[[], pd.DataFrame]],
+    fred: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
+    yfinance: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
+    l4_config: Dict[str, Any],
 ) -> pd.DataFrame:
     """
-    Build L4 cross-asset features describing the global market state.
+    Build L4 cross-asset regime features from L3 data only.
+
+    - Validates that every asset in l4_config.proxies exists in L3 data.
+    - For each regime in l4_config.regimes: loads source asset, validates signal
+      column, applies thresholds, produces a categorical regime column.
+    - Joins all series on date (inner). No new statistics are computed.
+
+    Args:
+        fred: Partitioned L3 FRED data (partition key -> loader or DataFrame).
+        yfinance: Partitioned L3 YFinance data (partition key -> loader or DataFrame).
+        l4_config: params:l4 (proxies, regimes with source/signal/thresholds).
+
+    Returns:
+        One DataFrame with columns: date, volatility_regime, dollar_regime,
+        rates_regime, inflation_regime (and any further regimes defined in l4).
+
+    Raises:
+        ValueError: If any proxy is missing or any required signal column is absent.
     """
     fred_by_asset = _load_partition_map(fred)
     yf_by_asset = _load_partition_map(yfinance)
+    all_assets: Dict[str, pd.DataFrame] = {**yf_by_asset, **fred_by_asset}
 
+    proxies = l4_config.get("proxies") or {}
+    regimes = l4_config.get("regimes") or {}
+    validation = l4_config.get("validation") or {}
+    require_proxies = validation.get("require_all_proxies", True)
+
+    # 1) Validate all proxies exist (fail-fast)
+    if require_proxies:
+        for role, asset_name in proxies.items():
+            _safe_get_asset(all_assets, asset_name, context=f"L4 proxy '{role}'")
+
+    # 2) Build base by joining regime series on date
     cross: Optional[pd.DataFrame] = None
 
-    # ==============================================================
-    # 1. RISK / STRESS
-    # ==============================================================
-    vix_df = yf_by_asset.get("vix")
-    sp500_df = yf_by_asset.get("sp500")
+    for regime_name, regime_cfg in regimes.items():
+        source_asset = regime_cfg.get("source")
+        signal_col = regime_cfg.get("signal")
+        if not source_asset or not signal_col:
+            raise ValueError(
+                f"L4 regime '{regime_name}' must have 'source' and 'signal' in params:l4.regimes"
+            )
 
-    if vix_df is not None:
+        df = _safe_get_asset(all_assets, source_asset, context=f"L4 regime '{regime_name}'")
+        _validate_required_columns(df, ["date", signal_col], source_asset)
+
+        series = df[signal_col]
+
+        # Ternary or binary from params only (no new statistics)
+        if "rising_threshold" in regime_cfg and "falling_threshold" in regime_cfg:
+            high_t = float(regime_cfg["rising_threshold"])
+            low_t = float(regime_cfg["falling_threshold"])
+            regime_series = _compute_ternary_regime(
+                series, high_t, low_t,
+                high_label="rising", low_label="falling", neutral_label="neutral",
+            )
+        elif "strong_threshold" in regime_cfg and "weak_threshold" in regime_cfg:
+            high_t = float(regime_cfg["strong_threshold"])
+            low_t = float(regime_cfg["weak_threshold"])
+            regime_series = _compute_ternary_regime(
+                series, high_t, low_t,
+                high_label="strong", low_label="weak", neutral_label="neutral",
+            )
+        elif "high_threshold" in regime_cfg and "low_threshold" in regime_cfg:
+            high_t = float(regime_cfg["high_threshold"])
+            low_t = float(regime_cfg["low_threshold"])
+            regime_series = _compute_ternary_regime(
+                series, high_t, low_t,
+                high_label="high", low_label="low", neutral_label="neutral",
+            )
+        elif "high_threshold" in regime_cfg:
+            regime_series = _compute_binary_regime(
+                series, float(regime_cfg["high_threshold"]),
+                high_label="high", neutral_label="neutral",
+            )
+        else:
+            raise ValueError(
+                f"L4 regime '{regime_name}' has no recognized threshold keys "
+                "(high_threshold/low_threshold, strong_threshold/weak_threshold, "
+                "rising_threshold/falling_threshold)."
+            )
+
+        regime_df = df[["date"]].copy()
+        regime_df[f"{regime_name}_regime"] = regime_series.values
         cross = _merge_on_date(
             cross,
-            vix_df,
-            {
-                "close": "vix_level",
-                "zscore_63": "vix_zscore_63",
-            },
-        )
-
-    if sp500_df is not None:
-        cross = _merge_on_date(
-            cross,
-            sp500_df,
-            {
-                "return_21d": "sp500_return_21d",
-                "rolling_std_63": "equity_vol_63",
-                "zscore_63": "sp500_zscore_63",
-            },
+            regime_df,
+            {f"{regime_name}_regime": f"{regime_name}_regime"},
         )
 
     if cross is None:
         return pd.DataFrame(columns=["date"])
 
-    cross["equity_vol_risk_index"] = (
-        cross["vix_zscore_63"] - cross["sp500_return_21d"]
-        if {"vix_zscore_63", "sp500_return_21d"} <= set(cross.columns)
-        else np.nan
-    )
-
-    # ==============================================================
-    # 2. LIQUIDITY / DOLLAR
-    # ==============================================================
-    dxy_df = yf_by_asset.get("dxy")
-    if dxy_df is not None:
-        cross = _merge_on_date(
-            cross,
-            dxy_df,
-            {"zscore_252": "dxy_zscore_252"},
-        )
-
-    # Yield curve (explicit)
-    long_rate_df = None
-    short_rate_df = None
-
-    for asset, df in fred_by_asset.items():
-        category = str(df["category"].iloc[0]).lower()
-        name = asset.lower()
-
-        if category == "yield_curve":
-            if "10y" in name or "30y" in name:
-                long_rate_df = df
-            elif "2y" in name or "3m" in name:
-                short_rate_df = df
-
-    # Inflation
-    inflation_df = next(
-        (df for df in fred_by_asset.values()
-         if str(df["category"].iloc[0]).lower() == "inflation"),
-        None,
-    )
-
-    # Real rate proxy
-    if long_rate_df is not None and inflation_df is not None:
-        rr = long_rate_df[["date", "value"]].rename(columns={"value": "long_rate"})
-        infl = inflation_df[["date", "zscore_252"]].rename(
-            columns={"zscore_252": "inflation_zscore_252"}
-        )
-        rr = rr.merge(infl, on="date", how="inner")
-        rr["real_rate_proxy"] = rr["long_rate"] - rr["inflation_zscore_252"]
-
-        cross = _merge_on_date(
-            cross,
-            rr,
-            {"real_rate_proxy": "real_rate_proxy"},
-        )
-    else:
-        cross["real_rate_proxy"] = np.nan
-
-    # ==============================================================
-    # 3. MACRO REGIME (explicit growth roles)
-    # ==============================================================
-    growth_real_df = None
-    growth_labor_df = None
-
-    for asset, df in fred_by_asset.items():
-        category = str(df["category"].iloc[0]).lower()
-        if category == "growth_real":
-            growth_real_df = df
-        elif category == "growth_labor":
-            growth_labor_df = df
-
-    # Yield curve slope
-    if long_rate_df is not None and short_rate_df is not None:
-        yc = (
-            long_rate_df[["date", "value"]]
-            .rename(columns={"value": "long_rate"})
-            .merge(
-                short_rate_df[["date", "value"]].rename(
-                    columns={"value": "short_rate"}
-                ),
-                on="date",
-                how="inner",
-            )
-        )
-        yc["yield_curve_slope"] = yc["long_rate"] - yc["short_rate"]
-
-        cross = _merge_on_date(
-            cross,
-            yc,
-            {"yield_curve_slope": "yield_curve_slope"},
-        )
-    else:
-        cross["yield_curve_slope"] = np.nan
-
-    # Growth vs inflation (INDPRO)
-    if growth_real_df is not None and inflation_df is not None:
-        gi = (
-            growth_real_df[["date", "zscore_252"]]
-            .rename(columns={"zscore_252": "growth_real_zscore_252"})
-            .merge(
-                inflation_df[["date", "zscore_252"]].rename(
-                    columns={"zscore_252": "inflation_zscore_252"}
-                ),
-                on="date",
-                how="inner",
-            )
-        )
-        gi["growth_vs_inflation_score"] = (
-            gi["growth_real_zscore_252"] - gi["inflation_zscore_252"]
-        )
-
-        cross = _merge_on_date(
-            cross,
-            gi,
-            {"growth_vs_inflation_score": "growth_vs_inflation_score"},
-        )
-    else:
-        cross["growth_vs_inflation_score"] = np.nan
-
-    # Growth confirmation (INDPRO vs PAYEMS)
-    if growth_real_df is not None and growth_labor_df is not None:
-        gc = (
-            growth_real_df[["date", "zscore_252"]]
-            .rename(columns={"zscore_252": "growth_real_zscore_252"})
-            .merge(
-                growth_labor_df[["date", "zscore_252"]].rename(
-                    columns={"zscore_252": "growth_labor_zscore_252"}
-                ),
-                on="date",
-                how="inner",
-            )
-        )
-        gc["growth_confirmation_gap"] = (
-            gc["growth_real_zscore_252"] - gc["growth_labor_zscore_252"]
-        )
-
-        cross = _merge_on_date(
-            cross,
-            gc,
-            {"growth_confirmation_gap": "growth_confirmation_gap"},
-        )
-    else:
-        cross["growth_confirmation_gap"] = np.nan
-
-    # ==============================================================
-    # 4. CROSS-ASSET RELATIONSHIPS
-    # ==============================================================
-    gold_df = yf_by_asset.get("gold")
-    if gold_df is not None and sp500_df is not None:
-        ge = (
-            gold_df[["date", "close"]].rename(columns={"close": "gold_close"})
-            .merge(
-                sp500_df[["date", "close"]].rename(
-                    columns={"close": "sp500_close"}
-                ),
-                on="date",
-                how="inner",
-            )
-        )
-        ge["gold_vs_equity_ratio"] = ge["gold_close"] / ge["sp500_close"]
-
-        cross = _merge_on_date(
-            cross,
-            ge,
-            {"gold_vs_equity_ratio": "gold_vs_equity_ratio"},
-        )
-    else:
-        cross["gold_vs_equity_ratio"] = np.nan
-
-    cross["equity_vs_crypto_momentum"] = np.nan
-
-    # ==============================================================
-    # 5. VOLATILITY REGIME
-    # ==============================================================
-    cross["vol_regime_flag"] = (
-        cross["sp500_zscore_63"] > 1.5
-        if "sp500_zscore_63" in cross.columns
-        else np.nan
-    )
-
     return (
         cross.sort_values("date")
         .drop_duplicates(subset=["date"], keep="last")
     )
-

@@ -23,7 +23,10 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 func=compute_primary_features,
-                inputs="crypto_ohlcv_daily_intermediate",
+                inputs={
+                    "intermediate_data": "crypto_ohlcv_daily_intermediate",
+                    "semantic_config": "params:l3_semantic",
+                },
                 outputs="crypto_ohlcv_daily_primary",
                 name="compute_primary_features",
             ),
