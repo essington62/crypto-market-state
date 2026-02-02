@@ -22,10 +22,19 @@ fred_macro_raw:
       compression: snappy
 
 
-# ---------- MACRO / YAHOO FINANCE ----------
-yfinance_macro_raw:
+# ---------- MACRO / YAHOO FINANCE (INDICES) ----------
+yfinance_indices_raw:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/01_raw/macro/yfinance
+  path: data/01_raw/macro/yfinance/indices
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# ---------- MARKET / YAHOO FINANCE (ASSETS) ----------
+yfinance_assets_raw:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/01_raw/market/yfinance/assets
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
@@ -64,6 +73,12 @@ yfinance_macro_intermediate:
     save_args:
       compression: snappy
 
+# ---------- REGIME BASELINE (L2 – preparação para HMM) ----------
+l2_regime_features:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/02_intermediate/regime/l2_regime_features.parquet
+  save_args:
+    compression: snappy
 
 
 # =====================================================
@@ -121,3 +136,69 @@ cross_asset_features:
   filepath: data/04_cross_asset/cross_asset_features.parquet
   save_args:
     compression: snappy
+
+# L4 HMM: input = tabular L3 alinhado por date (5 features)
+l3_regime_features:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/l3_regime_features.parquet
+  save_args:
+    compression: snappy
+
+l4_regime_states:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/l4_regime_states.parquet
+  save_args:
+    compression: snappy
+
+l4_regime_transition_matrix:
+  type: kedro_datasets.json.JSONDataset
+  filepath: data/04_cross_asset/l4_regime_transition_matrix.json
+
+l4_regime_state_stats:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/l4_regime_state_stats.parquet
+  save_args:
+    compression: snappy
+
+l4_current_market_regime:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/l4_current_market_regime.parquet
+  save_args:
+    compression: snappy
+
+l4_regime_states_enriched:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/l4_regime_states_enriched.parquet
+  save_args:
+    compression: snappy
+
+l4_viterbi_diagnostics:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_cross_asset/l4_viterbi_diagnostics.parquet
+  save_args:
+    compression: snappy
+
+
+
+# =====================================================
+# ==================== MODELING =======================
+# =====================================================
+
+# ---------- REGIME BASELINE ----------
+regime_dataset:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_modeling/regime_baseline/regime_dataset.parquet
+  save_args:
+    compression: snappy
+
+regime_model:
+  type: kedro_datasets.pickle.PickleDataset
+  filepath: data/05_modeling/regime_baseline/regime_model.pkl
+
+regime_metrics:
+  type: kedro_datasets.json.JSONDataset
+  filepath: data/05_modeling/regime_baseline/regime_metrics.json
+
+current_regime:
+  type: kedro_datasets.json.JSONDataset
+  filepath: data/05_modeling/regime_baseline/current_regime.json

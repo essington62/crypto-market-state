@@ -29,7 +29,14 @@ def compute_primary_features(
     - Each asset must be defined in l3_semantic.assets (e.g. 'btc')
     - Only features listed in the config are computed
     - Crypto assets get returns, volatility, normalization, momentum
-    - No level/changes/trends features for crypto assets
+    - Optional: SMA/EMA and price-vs-average relationships (see below)
+
+    SMA/EMA and price-relationship features (e.g. btc_sma_20, btc_close_vs_sma_200):
+    These represent heuristics widely used by human traders (personas de mercado).
+    They are for modeling collective behavior and future L5 policy use, not for
+    prediction. They must NOT be used as target and do NOT enter the HMM in this
+    baseline. Rolling windows produce NaN at the start of the series; no drop,
+    forward-fill or backfill is applied in L3.
 
     Args:
         intermediate_data:
@@ -50,17 +57,16 @@ def compute_primary_features(
     primary_features = {}
 
     for partition_key, load_df in intermediate_data.items():
-        # Load the actual DataFrame
         df = load_df()
 
-        # Create a copy to avoid modifying input
+        if df is None or df.empty:
+            raise ValueError(
+                f"Crypto L3: partition {partition_key} returned empty DataFrame."
+            )
+
         df_features = df.copy()
 
-        # Crypto assets: partition_key is the symbol (e.g. 'BTCUSDT')
-        # Normalize to asset name for semantic lookup (e.g. 'btc')
         asset_name = normalize_asset_name(partition_key)
-
-        # Resolve allowed features from semantic config
         try:
             features_allowed = get_semantic_features(
                 asset_name=asset_name,
@@ -71,10 +77,11 @@ def compute_primary_features(
                 f"Crypto asset {partition_key} (normalized: {asset_name}): {e}"
             )
 
-        # Ensure we have required columns
         if "close" not in df_features.columns:
-            primary_features[partition_key] = df_features
-            continue
+            raise ValueError(
+                f"Crypto L3: partition {partition_key} missing required column 'close'. "
+                f"Available: {list(df_features.columns)}"
+            )
 
         close = df_features["close"]
 
@@ -123,9 +130,44 @@ def compute_primary_features(
         if "momentum_63" in features_allowed:
             df_features["momentum_63"] = close / close.shift(63) - 1
 
-        # Ensure ascending order (safety check)
-        df_features = df_features.sort_index()
+        # ====================================================================
+        # SMA / EMA e relações de preço (apenas se permitido no semantic)
+        # Heurísticas de traders; não são target e não entram no HMM.
+        # NaN no início da série são permitidos (sem drop/ffill/bfill).
+        # ====================================================================
+        if "btc_sma_20" in features_allowed:
+            df_features["btc_sma_20"] = close.rolling(20).mean()
+        if "btc_sma_50" in features_allowed:
+            df_features["btc_sma_50"] = close.rolling(50).mean()
+        if "btc_sma_100" in features_allowed:
+            df_features["btc_sma_100"] = close.rolling(100).mean()
+        if "btc_sma_200" in features_allowed:
+            df_features["btc_sma_200"] = close.rolling(200).mean()
 
+        if "btc_ema_20" in features_allowed:
+            df_features["btc_ema_20"] = close.ewm(span=20, adjust=False).mean()
+        if "btc_ema_50" in features_allowed:
+            df_features["btc_ema_50"] = close.ewm(span=50, adjust=False).mean()
+        if "btc_ema_200" in features_allowed:
+            df_features["btc_ema_200"] = close.ewm(span=200, adjust=False).mean()
+
+        if "btc_close_vs_sma_200" in features_allowed and "btc_sma_200" in df_features.columns:
+            df_features["btc_close_vs_sma_200"] = (close / df_features["btc_sma_200"]) - 1
+        if "btc_close_above_sma_200" in features_allowed and "btc_sma_200" in df_features.columns:
+            df_features["btc_close_above_sma_200"] = close > df_features["btc_sma_200"]
+
+        if "btc_sma_50_vs_200" in features_allowed:
+            if "btc_sma_50" in df_features.columns and "btc_sma_200" in df_features.columns:
+                df_features["btc_sma_50_vs_200"] = (
+                    df_features["btc_sma_50"] / df_features["btc_sma_200"]
+                ) - 1
+        if "btc_golden_cross" in features_allowed:
+            if "btc_sma_50" in df_features.columns and "btc_sma_200" in df_features.columns:
+                df_features["btc_golden_cross"] = (
+                    df_features["btc_sma_50"] > df_features["btc_sma_200"]
+                )
+
+        df_features = df_features.sort_index()
         primary_features[partition_key] = df_features
 
     return primary_features

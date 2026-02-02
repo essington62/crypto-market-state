@@ -17,7 +17,9 @@ def expand_monthly_to_daily(
     Expand monthly macro series to daily frequency via forward-fill,
     replicating the last known value up to TODAY (UTC).
 
-    This represents macro STATE until the next official release.
+    L1 contract: continuous daily frequency (no date gaps), UTC, weekends
+    filled, ZERO NaN in value. Forward-fill is applied explicitly after
+    reindex; no backfill. Pure function, no I/O.
     """
     df = df.copy().sort_values("date")
 
@@ -31,12 +33,25 @@ def expand_monthly_to_daily(
         tz="UTC",
     )
 
-    return (
+    out = (
         df.set_index("date")
         .reindex(daily_index, method="ffill")
         .reset_index()
         .rename(columns={"index": "date"})
     )
+
+    # Explicit forward-fill so the last known value extends to the current date
+    if "value" not in out.columns:
+        raise ValueError("L1 FRED: missing 'value' column after daily expansion.")
+    if out["value"].isna().any():
+        out["value"] = out["value"].ffill()
+    if out["value"].isna().any():
+        raise ValueError(
+            "L1 FRED: NaN in 'value' after forward-fill. "
+            "Ensure raw series has at least one non-NaN value."
+        )
+
+    return out
 
 
 

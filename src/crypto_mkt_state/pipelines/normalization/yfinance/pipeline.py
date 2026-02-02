@@ -30,8 +30,9 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=normalize_yfinance_macro,
                 inputs={
-                    "data": "yfinance_macro_raw",
-                    "assets_meta": "params:yfinance.assets",
+                    "indices_data": "yfinance_indices_raw",
+                    "assets_data": "yfinance_assets_raw",
+                    "yfinance_config": "params:yfinance",
                 },
                 outputs="yfinance_macro_intermediate",
                 name="normalize_yfinance_macro",

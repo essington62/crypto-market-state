@@ -14,9 +14,10 @@ from crypto_mkt_state.pipelines.ingestion.fred.pipeline import (
     create_pipeline as ingestion_fred_pipeline,
 )
 
-# ---------- YFINANCE ----------
+# ---------- YFINANCE (INDICES + ASSETS, separate pipelines) ----------
 from crypto_mkt_state.pipelines.ingestion.yfinance.pipeline import (
-    create_pipeline as ingestion_yfinance_pipeline,
+    create_pipeline_indices as ingestion_yfinance_indices_pipeline,
+    create_pipeline_assets as ingestion_yfinance_assets_pipeline,
 )
 
 # =====================================================
@@ -49,6 +50,9 @@ from crypto_mkt_state.pipelines.primary.yfinance.pipeline import (
 from crypto_mkt_state.pipelines.cross_asset.pipeline import (
     create_pipeline as cross_asset_pipeline,
 )
+from crypto_mkt_state.pipelines.modeling.regime_baseline.pipeline import (
+    create_pipeline as regime_baseline_pipeline,
+)
 
 
 def register_pipelines() -> dict[str, Pipeline]:
@@ -58,7 +62,8 @@ def register_pipelines() -> dict[str, Pipeline]:
     # ---------- L1 ----------
     pipelines["ingestion.binance"] = ingestion_binance_pipeline()
     pipelines["ingestion.fred"] = ingestion_fred_pipeline()
-    pipelines["ingestion.yfinance"] = ingestion_yfinance_pipeline()
+    pipelines["ingestion.yfinance.indices"] = ingestion_yfinance_indices_pipeline()
+    pipelines["ingestion.yfinance.assets"] = ingestion_yfinance_assets_pipeline()
 
     # ---------- L2 ----------
     pipelines["normalization.crypto"] = normalization_crypto_pipeline()
@@ -73,8 +78,10 @@ def register_pipelines() -> dict[str, Pipeline]:
     # ---------- L4 ----------
     pipelines["cross_asset"] = cross_asset_pipeline()
 
+    # ---------- MODELING ----------
+    pipelines["modeling.regime_baseline"] = regime_baseline_pipeline()
+
     # ---------- DEFAULT ----------
-    # Default explícito: ingestion.yfinance (ajuste se quiser outro)
-    pipelines["__default__"] = pipelines["ingestion.yfinance"]
+    pipelines["__default__"] = pipelines["ingestion.yfinance.indices"]
 
     return pipelines

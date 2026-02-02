@@ -32,6 +32,7 @@ pandas-ta>=0.3.14b0
 # Estatística e testes
 statsmodels>=0.14.0
 scipy>=1.11.0
+hmmlearn>=0.3.0
 
 # Visualização
 matplotlib>=3.7.0

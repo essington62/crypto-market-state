@@ -13,6 +13,9 @@ global:
 binance:
   source: "binance"
   market: "spot"
+  calendar:
+    type: "continuous"        # 24x7
+    timezone: "UTC"
 
   assets:
     - BTCUSDT
@@ -30,36 +33,33 @@ binance:
 # =====================================================
 fred:
   source: "fred"
+  calendar:
+    type: "business_days"     # weekdays only
+    timezone: "UTC"
+    ffill_allowed: true
 
   series:
     - id: FEDFUNDS
       name: fed_funds_rate
       category: monetary_policy
-
     - id: DGS2
       name: us_2y_yield
       category: yield_curve
-
     - id: DGS10
       name: us_10y_yield
       category: yield_curve
-
     - id: CPIAUCSL
       name: cpi
       category: inflation
-
     - id: UNRATE
       name: unemployment_rate
       category: labor_market
-
     - id: WALCL
       name: fed_balance_sheet
       category: liquidity
-
     - id: INDPRO
       name: industrial_production
       category: growth
-
     - id: PAYEMS
       name: nonfarm_payrolls
       category: growth
@@ -68,26 +68,32 @@ fred:
 # =====================================================
 # ===================== YFINANCE ======================
 # =====================================================
+# Semantic split: INDICES = macro context (no return/momentum/vol in L3).
+#                 ASSETS = tradable (return/momentum/vol allowed in L3).
 yfinance:
   source: "yfinance"
+  calendar:
+    type: "business_days"     # market calendar
+    timezone: "UTC"
+    ffill_allowed: true
 
-  assets:
-    - ticker: "^GSPC"
-      name: sp500
-      category: equity_index
-
-    - ticker: "^IXIC"
-      name: nasdaq
-      category: equity_index
-
+  # Macro indices only (volatility, fx) — L3 indices_primary: value/delta/zscore only, NO return/momentum/vol
+  indices:
     - ticker: "^VIX"
       name: vix
       category: volatility
-
     - ticker: "DX-Y.NYB"
       name: dxy
       category: fx
 
+  # Tradable assets (equity_index, commodity) — L3 assets_primary: return/momentum/vol allowed
+  assets:
+    - ticker: "^GSPC"
+      name: sp500
+      category: equity_index
+    - ticker: "^IXIC"
+      name: nasdaq
+      category: equity_index
     - ticker: "GC=F"
       name: gold
       category: commodity
@@ -97,15 +103,41 @@ yfinance:
 # ==================== L3 SEMANTIC ====================
 # =====================================================
 # Contrato explícito de features por ativo / índice
-# Qualquer asset fora daqui gera erro (fail fast)
+# Qualquer asset fora daqui gera erro (fail-fast)
 
 l3_semantic:
 
-  # ===================== ATIVOS ======================
+  # --------------------- ASSETS ----------------------
   assets:
 
     # ---------- CRYPTO ----------
     btc:
+      source: binance
+      category: crypto
+      features: &btc_features
+        - return_1d
+        - return_5d
+        - return_21d
+        - rolling_std_21
+        - rolling_std_63
+        - zscore_21
+        - zscore_63
+        - momentum_21
+        - momentum_63
+        # SMA/EMA e relações de preço (heurísticas de mercado; não entram no HMM)
+        - btc_sma_20
+        - btc_sma_50
+        - btc_sma_100
+        - btc_sma_200
+        - btc_ema_20
+        - btc_ema_50
+        - btc_ema_200
+        - btc_close_vs_sma_200
+        - btc_close_above_sma_200
+        - btc_sma_50_vs_200
+        - btc_golden_cross
+
+    eth:
       source: binance
       category: crypto
       features: &crypto_features
@@ -118,11 +150,6 @@ l3_semantic:
         - zscore_63
         - momentum_21
         - momentum_63
-
-    eth:
-      source: binance
-      category: crypto
-      features: *crypto_features
 
     ada:
       source: binance
@@ -194,7 +221,7 @@ l3_semantic:
         - zscore_63
 
 
-  # ===================== ÍNDICES =====================
+  # --------------------- INDICES ---------------------
   indices:
 
     # ---------- YIELD CURVE ----------
@@ -290,7 +317,7 @@ l3_semantic:
         - zscore_63
 
 
-  # ===================== CLASSES SEMÂNTICAS =====================
+  # ------------------ SEMANTIC CLASSES ----------------
   overrides:
 
     btc:
@@ -324,14 +351,11 @@ l3_semantic:
 # ========================= L4 ========================
 # =====================================================
 # Cross-asset macro regime layer
-# Consome APENAS índices (L3 indices)
-# Assets aparecem apenas como leitura posterior (não proxy)
+# Regimes determinísticos + regime latente (HMM)
 
 l4:
 
-  # ---------------------------------------------------
-  # 1. PROXIES CANÔNICOS (SOMENTE ÍNDICES)
-  # ---------------------------------------------------
+  # ---------------- PROXIES CANÔNICOS -----------------
   proxies:
     volatility: vix
     dollar: dxy
@@ -340,9 +364,7 @@ l4:
     inflation: cpi
 
 
-  # ---------------------------------------------------
-  # 2. REGIMES MACRO
-  # ---------------------------------------------------
+  # ---------------- REGIMES MACRO --------------------
   regimes:
 
     volatility:
@@ -369,27 +391,7 @@ l4:
       high_threshold: 1.0
 
 
-  # ---------------------------------------------------
-  # 3. ASSET LEITURA (NÃO DEFINE REGIME)
-  # ---------------------------------------------------
-  asset_signals:
-
-    relative_to_equity:
-      compare_against: sp500
-
-    defensive_assets:
-      - gold
-
-    risk_assets:
-      - btc
-      - eth
-      - sp500
-      - nasdaq
-
-
-  # ---------------------------------------------------
-  # 4. FLAGS INTERPRETÁVEIS
-  # ---------------------------------------------------
+  # ---------------- INTERPRETABLE FLAGS ---------------
   flags:
 
     risk_off:
@@ -412,10 +414,21 @@ l4:
         - rates.falling
 
 
-  # ---------------------------------------------------
-  # 5. CONTRATO DE SEGURANÇA
-  # ---------------------------------------------------
+  # ---------------- VALIDATION CONTRACT ---------------
   validation:
     require_all_proxies: true
     fail_on_missing_features: true
     allow_partial_history: true
+
+
+  # ---------------- HMM (LATENT REGIME) ----------------
+  hmm:
+    n_components: 3
+    covariance_type: "full"
+    n_iter: 500
+    random_state: 42
+    min_observations: 50
+
+  # ---------------- INFERENCE (VITERBI DIAGNOSTICS) ----------------
+  inference:
+    entropy_threshold: 1.0   # gate: do not run Viterbi when regime_entropy > this

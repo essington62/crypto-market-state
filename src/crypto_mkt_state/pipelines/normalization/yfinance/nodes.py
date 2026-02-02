@@ -16,74 +16,55 @@ import pandas as pd
 
 
 def normalize_yfinance_macro(
-    data: Dict[str, Callable[[], pd.DataFrame]],
-    assets_meta: list[dict],
+    indices_data: Dict[str, Any],
+    assets_data: Dict[str, Any],
+    yfinance_config: dict,
 ) -> Dict[str, pd.DataFrame]:
     """
-    Normalize Yahoo Finance macro series at L2 (intermediate) level.
+    Normalize Yahoo Finance L1 (indices + assets) to L2 intermediate.
 
-    This node:
-    - Processes each partition (ticker) independently
-    - Adds columns:
-        - symbol: ticker identifier (partition key)
-        - asset: asset name from metadata (params:yfinance.assets)
-        - category: category from metadata
-        - source: constant string "yfinance"
-        - interval: constant string "1d"
-        - ingestion_ts: UTC timestamp of normalization
-    - Sorts by date
-    - Removes duplicate dates (keeping the last occurrence)
-
-    The function is pure and does not access the filesystem or Kedro datasets.
+    Consumes yfinance_indices_raw and yfinance_assets_raw (semantic split at L1).
+    Merges partitions and attaches metadata from params:yfinance.indices and
+    params:yfinance.assets. No return/momentum/vol logic — schema only.
 
     Args:
-        data:
-            Dictionary mapping ticker (partition keys) to callables that
-            return DataFrames from L1 (`yfinance_macro_raw`). Each DataFrame must
-            contain:
-            - date (datetime64[ns, UTC])
-            - open, high, low, close, volume (float)
-        assets_meta:
-            List of dicts from `params:yfinance.assets`. Each dict is expected to
-            contain at least:
-            - ticker: ticker identifier, matching the partition key
-            - name: human-readable asset name
-            - category: category label for the asset
+        indices_data: Partitions from yfinance_indices_raw (ticker -> loader/df).
+        assets_data: Partitions from yfinance_assets_raw (ticker -> loader/df).
+        yfinance_config: params:yfinance (indices + assets lists with ticker, name, category).
 
     Returns:
-        Dictionary mapping ticker to normalized DataFrames that are
-        compatible with a PartitionedDataset:
-        - Columns:
-            - date
-            - open
-            - high
-            - low
-            - close
-            - volume
-            - symbol
-            - asset
-            - category
-            - source
-            - interval
-            - ingestion_ts
-        - Sorted by date ascending
-        - Duplicate dates removed (keep last)
+        Dict[ticker, DataFrame] normalized, compatible with yfinance_macro_intermediate.
     """
-    # Build metadata lookup keyed by ticker
+    indices_meta = (yfinance_config or {}).get("indices") or []
+    assets_meta = (yfinance_config or {}).get("assets") or []
     meta_by_ticker: Dict[str, dict] = {
-        m["ticker"]: m for m in assets_meta if "ticker" in m
+        m["ticker"]: m for m in indices_meta + assets_meta if "ticker" in m
     }
+
+    def _ensure_df(v: Any) -> pd.DataFrame:
+        return v() if callable(v) else v
+
+    data: Dict[str, Any] = {}
+    for k, v in (indices_data or {}).items():
+        data[k] = v
+    for k, v in (assets_data or {}).items():
+        if k in data:
+            raise ValueError(
+                f"L2 YFinance: duplicate partition key '{k}' between indices and assets."
+            )
+        data[k] = v
 
     normalized: Dict[str, pd.DataFrame] = {}
 
     for ticker, loader in data.items():
-        # Support both callables (PartitionedDataset standard) and direct DataFrames
         if callable(loader):
             df = loader()
         else:
             df = loader  # type: ignore[assignment]
 
-        # Defensive copy to avoid mutating upstream objects
+        if df is None or df.empty:
+            continue
+
         df_norm = df.copy()
 
         # Keep only original yfinance OHLCV schema
