@@ -12,9 +12,9 @@ from .nodes import load_yfinance_indices_l1, load_yfinance_assets_l1
 
 def create_pipeline_indices(**kwargs) -> Pipeline:
     """
-    L1 ingestion for YFinance INDICES only (VIX, DXY, GSPC, etc.).
+    L1 ingestion for YFinance INDICES only (VIX, DXY, etc.).
 
-    Output: yfinance_indices_raw -> data/01_raw/macro/yfinance/indices/
+    Output: yfinance_indices_raw -> data/01_raw/yfinance/indices/
     """
     return Pipeline(
         [
@@ -34,9 +34,9 @@ def create_pipeline_indices(**kwargs) -> Pipeline:
 
 def create_pipeline_assets(**kwargs) -> Pipeline:
     """
-    L1 ingestion for YFinance ASSETS only (AAPL, MSFT, etc.).
+    L1 ingestion for YFinance ASSETS only (GSPC, IXIC, GC=F, etc.).
 
-    Output: yfinance_assets_raw -> data/01_raw/market/yfinance/assets/
+    Output: yfinance_assets_raw -> data/01_raw/yfinance/assets/
     """
     return Pipeline(
         [

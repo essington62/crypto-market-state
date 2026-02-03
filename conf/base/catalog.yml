@@ -22,19 +22,19 @@ fred_macro_raw:
       compression: snappy
 
 
-# ---------- MACRO / YAHOO FINANCE (INDICES) ----------
+# ---------- YAHOO FINANCE (INDICES) ----------
 yfinance_indices_raw:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/01_raw/macro/yfinance/indices
+  path: data/01_raw/yfinance/indices
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
 
-# ---------- MARKET / YAHOO FINANCE (ASSETS) ----------
+# ---------- YAHOO FINANCE (ASSETS) ----------
 yfinance_assets_raw:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/01_raw/market/yfinance/assets
+  path: data/01_raw/yfinance/assets
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
@@ -64,10 +64,19 @@ fred_macro_intermediate:
     save_args:
       compression: snappy
 
-# ---------- MACRO / YFINANCE ----------
-yfinance_macro_intermediate:
+# ---------- YAHOO FINANCE (INDICES) ----------
+yfinance_indices_intermediate:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/02_intermediate/macro/yfinance
+  path: data/02_intermediate/yfinance/indices
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# ---------- YAHOO FINANCE (ASSETS) ----------
+yfinance_assets_intermediate:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/02_intermediate/yfinance/assets
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
@@ -104,30 +113,23 @@ fred_macro_primary:
     save_args:
       compression: snappy
 
-# ---------- MACRO / YFINANCE ----------
-yfinance_assets_primary:
-  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/03_primary/macro/yfinance_assets
-  dataset:
-    type: kedro_datasets.pandas.ParquetDataset
-    save_args:
-      compression: snappy
-
+# ---------- YAHOO FINANCE (INDICES) ----------
 yfinance_indices_primary:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/03_primary/macro/yfinance_indices
+  path: data/03_primary/yfinance/indices
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
 
-# yfinance_macro_primary:
-#   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-#   path: data/03_primary/macro/yfinance
-#   dataset:
-#     type: kedro_datasets.pandas.ParquetDataset
-#     save_args:
-#       compression: snappy
+# ---------- YAHOO FINANCE (ASSETS) ----------
+yfinance_assets_primary:
+  type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
+  path: data/03_primary/yfinance/assets
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
 
 
 # ---------- L4 CROSS-ASSET ----------

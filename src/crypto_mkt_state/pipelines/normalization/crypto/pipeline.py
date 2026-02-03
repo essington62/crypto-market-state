@@ -2,9 +2,11 @@
 L2 normalization pipeline for crypto OHLCV daily data.
 
 This pipeline normalizes schema from L1 (raw) to L2 (intermediate) format:
-- Renames columns (open_time → timestamp)
-- Sets canonical index (timestamp as DatetimeIndex)
-- Preserves all values exactly as received
+- Creates `date` column from `open_time` (UTC, defensive)
+- Preserves all structural columns (OHLCV + metadata)
+- Ensures clean time axis (sorted by date, duplicate dates removed)
+
+Contract: L2 MUST have `date` column (datetime64[ns, UTC]), not index.
 """
 
 from kedro.pipeline import Pipeline, node

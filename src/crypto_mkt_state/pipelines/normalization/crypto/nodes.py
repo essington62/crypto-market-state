@@ -1,68 +1,54 @@
 """
-L2 normalization nodes for crypto OHLCV data.
+L2 normalization node for crypto OHLCV data (Binance).
 
-This module contains nodes that perform schema normalization only:
-- Column renaming (open_time → timestamp)
-- Index setting (timestamp as DatetimeIndex)
-- Type preservation (no value transformations)
+Purpose:
+- Canonicalize column naming ONLY.
+- No temporal logic.
+- No timezone conversion.
+- No sorting assumptions.
+- No value transformations.
+
+L2 contract:
+- `date` must exist as a column
+- Index is non-semantic
+- All other columns preserved exactly
 """
 
-from typing import Dict
-
+from typing import Dict, Callable
 import pandas as pd
 
-"""
+
+def normalize_ohlcv_daily_schema(
+    raw_data: Dict[str, Callable[[], pd.DataFrame]],
+) -> Dict[str, pd.DataFrame]:
+    """
     Normalize OHLCV daily schema from L1 to L2 canonical format.
 
-    This node performs ONLY schema normalization:
-    - Renames open_time → timestamp
-    - Sets timestamp as DatetimeIndex (UTC)
-    - Ensures ascending order
-    - Preserves all values exactly as received from L1
-
-    Processes each partition (asset) independently, maintaining
-    the partitioned structure.
-
-    Args:
-        raw_data:
-            Dictionary mapping partition keys (asset symbols) to DataFrames
-            from L1. Each DataFrame has columns:
-            - open_time (datetime64[ns, UTC])
-            - open, high, low, close (float64)
-            - volume, quote_volume (float64)
-            - close_time (datetime64[ns, UTC])
-            - trades (int64)
-            - taker_buy_base_volume, taker_buy_quote_volume (float64)
-
-    Returns:
-        Dictionary mapping partition keys to normalized DataFrames with:
-        - Index: timestamp (DatetimeIndex, UTC)
-        - Columns: same as L1 except open_time renamed to timestamp
-        - All values preserved exactly from L1
-        - Sorted by timestamp ascending
+    Transformation (and ONLY this):
+    - open_time -> date
     """
-    
-def normalize_ohlcv_daily_schema(
-    raw_data: Dict[str, callable],
-) -> Dict[str, pd.DataFrame]:
-    normalized = {}
+
+    normalized: Dict[str, pd.DataFrame] = {}
 
     for partition_key, load_df in raw_data.items():
-        # 🔑 Load the actual DataFrame
         df = load_df()
 
-        # Defensive copy
-        df_normalized = df.copy()
+        # Pass-through empty partitions
+        if df is None or df.empty:
+            normalized[partition_key] = df
+            continue
 
-        # Rename open_time → timestamp
-        df_normalized = df_normalized.rename(columns={"open_time": "timestamp"})
+        df = df.copy()
 
-        # Set index
-        df_normalized = df_normalized.set_index("timestamp")
+        if "open_time" not in df.columns:
+            raise ValueError(
+                f"L2 normalize_ohlcv_daily_schema: missing 'open_time' "
+                f"in partition '{partition_key}'. Columns: {list(df.columns)}"
+            )
 
-        # Ensure order
-        df_normalized = df_normalized.sort_index()
+        # 🔑 ONLY rename
+        df = df.rename(columns={"open_time": "date"})
 
-        normalized[partition_key] = df_normalized
+        normalized[partition_key] = df
 
     return normalized
