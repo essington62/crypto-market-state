@@ -151,99 +151,106 @@ def _merge_on_date(
 # ---------------------------------------------------------------------------
 def build_cross_asset_features(
     fred: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
-    yfinance: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
+    yfinance_assets: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
+    yfinance_indices: Dict[str, Union[Callable[[], pd.DataFrame], pd.DataFrame]],
     l4_config: Dict[str, Any],
     l4_regime_states: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
     Build L4 cross-asset regime features from L3 data only.
 
-    - Validates that every asset in l4_config.proxies exists in L3 data.
-    - For each regime in l4_config.regimes: loads source asset, validates signal
-      column, applies thresholds, produces a categorical regime column.
-    - Joins all series on date (inner). No new statistics are computed.
-    - If l4_regime_states is provided and contains regime_entropy, merges
-      regime_entropy on date so it appears in cross_asset_features.
+    Sources:
+    - FRED (macro)
+    - YFinance assets
+    - YFinance indices
 
-    Args:
-        fred: Partitioned L3 FRED data (partition key -> loader or DataFrame).
-        yfinance: Partitioned L3 YFinance data (partition key -> loader or DataFrame).
-        l4_config: params:l4 (proxies, regimes with source/signal/thresholds).
-        l4_regime_states: Optional L4 HMM output with date and regime_entropy.
-
-    Returns:
-        One DataFrame with columns: date, volatility_regime, dollar_regime,
-        rates_regime, inflation_regime, regime_entropy (if provided), etc.
-
-    Raises:
-        ValueError: If any proxy is missing or any required signal column is absent.
+    L4 is read-only: no new statistics, thresholds only.
     """
+
     fred_by_asset = _load_partition_map(fred)
-    yf_by_asset = _load_partition_map(yfinance)
-    all_assets: Dict[str, pd.DataFrame] = {**yf_by_asset, **fred_by_asset}
+    yf_assets_by_asset = _load_partition_map(yfinance_assets)
+    yf_indices_by_asset = _load_partition_map(yfinance_indices)
+
+    # Unified lookup table (explicit, no magic)
+    all_assets: Dict[str, pd.DataFrame] = {
+        **fred_by_asset,
+        **yf_assets_by_asset,
+        **yf_indices_by_asset,
+    }
 
     proxies = l4_config.get("proxies") or {}
     regimes = l4_config.get("regimes") or {}
     validation = l4_config.get("validation") or {}
     require_proxies = validation.get("require_all_proxies", True)
 
-    # 1) Validate all proxies exist (fail-fast)
+    # ------------------------------------------------------------------
+    # 1) Validate proxies (fail-fast)
+    # ------------------------------------------------------------------
     if require_proxies:
         for role, asset_name in proxies.items():
             _safe_get_asset(all_assets, asset_name, context=f"L4 proxy '{role}'")
 
-    # 2) Build base by joining regime series on date
+    # ------------------------------------------------------------------
+    # 2) Build regime columns
+    # ------------------------------------------------------------------
     cross: Optional[pd.DataFrame] = None
 
-    for regime_name, regime_cfg in regimes.items():
-        source_asset = regime_cfg.get("source")
-        signal_col = regime_cfg.get("signal")
-        if not source_asset or not signal_col:
+    for regime_name, cfg in regimes.items():
+        source = cfg.get("source")
+        signal = cfg.get("signal")
+
+        if not source or not signal:
             raise ValueError(
-                f"L4 regime '{regime_name}' must have 'source' and 'signal' in params:l4.regimes"
+                f"L4 regime '{regime_name}' must define 'source' and 'signal'."
             )
 
-        df = _safe_get_asset(all_assets, source_asset, context=f"L4 regime '{regime_name}'")
-        _validate_required_columns(df, ["date", signal_col], source_asset)
+        df = _safe_get_asset(all_assets, source, context=f"L4 regime '{regime_name}'")
+        _validate_required_columns(df, ["date", signal], source)
 
-        series = df[signal_col]
+        series = df[signal]
 
-        # Ternary or binary from params only (no new statistics)
-        if "rising_threshold" in regime_cfg and "falling_threshold" in regime_cfg:
-            high_t = float(regime_cfg["rising_threshold"])
-            low_t = float(regime_cfg["falling_threshold"])
+        if "rising_threshold" in cfg and "falling_threshold" in cfg:
             regime_series = _compute_ternary_regime(
-                series, high_t, low_t,
-                high_label="rising", low_label="falling", neutral_label="neutral",
+                series,
+                float(cfg["rising_threshold"]),
+                float(cfg["falling_threshold"]),
+                high_label="rising",
+                low_label="falling",
+                neutral_label="neutral",
             )
-        elif "strong_threshold" in regime_cfg and "weak_threshold" in regime_cfg:
-            high_t = float(regime_cfg["strong_threshold"])
-            low_t = float(regime_cfg["weak_threshold"])
+        elif "strong_threshold" in cfg and "weak_threshold" in cfg:
             regime_series = _compute_ternary_regime(
-                series, high_t, low_t,
-                high_label="strong", low_label="weak", neutral_label="neutral",
+                series,
+                float(cfg["strong_threshold"]),
+                float(cfg["weak_threshold"]),
+                high_label="strong",
+                low_label="weak",
+                neutral_label="neutral",
             )
-        elif "high_threshold" in regime_cfg and "low_threshold" in regime_cfg:
-            high_t = float(regime_cfg["high_threshold"])
-            low_t = float(regime_cfg["low_threshold"])
+        elif "high_threshold" in cfg and "low_threshold" in cfg:
             regime_series = _compute_ternary_regime(
-                series, high_t, low_t,
-                high_label="high", low_label="low", neutral_label="neutral",
+                series,
+                float(cfg["high_threshold"]),
+                float(cfg["low_threshold"]),
+                high_label="high",
+                low_label="low",
+                neutral_label="neutral",
             )
-        elif "high_threshold" in regime_cfg:
+        elif "high_threshold" in cfg:
             regime_series = _compute_binary_regime(
-                series, float(regime_cfg["high_threshold"]),
-                high_label="high", neutral_label="neutral",
+                series,
+                float(cfg["high_threshold"]),
+                high_label="high",
+                neutral_label="neutral",
             )
         else:
             raise ValueError(
-                f"L4 regime '{regime_name}' has no recognized threshold keys "
-                "(high_threshold/low_threshold, strong_threshold/weak_threshold, "
-                "rising_threshold/falling_threshold)."
+                f"L4 regime '{regime_name}' has no valid threshold configuration."
             )
 
         regime_df = df[["date"]].copy()
         regime_df[f"{regime_name}_regime"] = regime_series.values
+
         cross = _merge_on_date(
             cross,
             regime_df,
@@ -258,15 +265,21 @@ def build_cross_asset_features(
         .drop_duplicates(subset=["date"], keep="last")
     )
 
-    # Merge regime_entropy from L4 HMM so it appears in cross_asset_features
+    # ------------------------------------------------------------------
+    # 3) Merge regime_entropy (from HMM)
+    # ------------------------------------------------------------------
     if l4_regime_states is not None and not l4_regime_states.empty:
-        if "regime_entropy" in l4_regime_states.columns and "date" in l4_regime_states.columns:
-            re_df = l4_regime_states[["date", "regime_entropy"]].copy()
-            re_df["date"] = pd.to_datetime(re_df["date"], utc=True)
-            re_df = re_df.drop_duplicates(subset=["date"], keep="last")
+        if {"date", "regime_entropy"}.issubset(l4_regime_states.columns):
+            re_df = (
+                l4_regime_states[["date", "regime_entropy"]]
+                .copy()
+                .assign(date=lambda x: pd.to_datetime(x["date"], utc=True))
+                .drop_duplicates(subset=["date"], keep="last")
+            )
             cross = cross.merge(re_df, on="date", how="left")
 
     return cross
+
 
 
 # ---------------------------------------------------------------------------

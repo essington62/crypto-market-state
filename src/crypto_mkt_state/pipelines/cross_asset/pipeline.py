@@ -84,13 +84,15 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=build_cross_asset_features,
                 inputs={
                     "fred": "fred_macro_primary",
-                    "yfinance": "yfinance_indices_primary",
+                    "yfinance_assets": "yfinance_assets_primary",
+                    "yfinance_indices": "yfinance_indices_primary",
                     "l4_config": "params:l4",
                     "l4_regime_states": "l4_regime_states_enriched",
                 },
                 outputs="cross_asset_features",
                 name="build_cross_asset_features",
             ),
+
 
             # ------------------------------------------------------------------
             # L4: Ex-post regime characterization (interpretability only)

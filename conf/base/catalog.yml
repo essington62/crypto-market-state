@@ -45,10 +45,10 @@ yfinance_assets_raw:
 # ================== L2 INTERMEDIATE ==================
 # =====================================================
 
-# ---------- CRYPTO ----------
-crypto_ohlcv_daily_intermediate:
+# ---------- L2 / CRYPTO / BINANCE ----------
+binance_spot_ohlcv_daily_intermediate:
   type: kedro_datasets.partitions.partitioned_dataset.PartitionedDataset
-  path: data/02_intermediate/crypto/ohlcv_daily
+  path: data/02_intermediate/crypto/binance/ohlcv_daily
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
