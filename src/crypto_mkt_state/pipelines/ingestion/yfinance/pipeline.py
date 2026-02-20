@@ -4,17 +4,14 @@ Kedro pipelines for Yahoo Finance L1 ingestion.
 Two pipelines by design: INDICES (macro context) and ASSETS (tradable).
 Indices must never receive return/momentum/vol features in L2/L3.
 """
-
 from kedro.pipeline import Pipeline, node
-
 from .nodes import load_yfinance_indices_l1, load_yfinance_assets_l1
 
 
 def create_pipeline_indices(**kwargs) -> Pipeline:
     """
-    L1 ingestion for YFinance INDICES only (VIX, DXY, etc.).
-
-    Output: yfinance_indices_raw -> data/01_raw/yfinance/indices/
+    L1 YFinance macro context.
+    Vai para domínio macro (independente da fonte).
     """
     return Pipeline(
         [
@@ -25,7 +22,7 @@ def create_pipeline_indices(**kwargs) -> Pipeline:
                     "start_date": "params:global.start_date",
                     "interval": "params:global.interval",
                 },
-                outputs="yfinance_indices_raw",
+                outputs="macro_daily_raw",   # 🔥 domínio macro
                 name="load_yfinance_indices_l1",
             )
         ]
@@ -34,9 +31,8 @@ def create_pipeline_indices(**kwargs) -> Pipeline:
 
 def create_pipeline_assets(**kwargs) -> Pipeline:
     """
-    L1 ingestion for YFinance ASSETS only (GSPC, IXIC, GC=F, etc.).
-
-    Output: yfinance_assets_raw -> data/01_raw/yfinance/assets/
+    L1 YFinance tradable assets.
+    Vai para domínio spot (source-agnostic).
     """
     return Pipeline(
         [
@@ -47,7 +43,7 @@ def create_pipeline_assets(**kwargs) -> Pipeline:
                     "start_date": "params:global.start_date",
                     "interval": "params:global.interval",
                 },
-                outputs="yfinance_assets_raw",
+                outputs="spot_daily_raw",   # 🔥 domínio spot
                 name="load_yfinance_assets_l1",
             )
         ]

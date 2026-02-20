@@ -1,0 +1,79 @@
+# =====================================================
+# ======================= L1 RAW ======================
+# =====================================================
+
+# -----------------------------------------------------
+# MACRO (não-negociável)
+# -----------------------------------------------------
+macro_daily_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/macro/daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# SPOT ASSETS (negociáveis)
+# Inclui:
+# - Crypto (Binance)
+# - Equity indices (S&P, Nasdaq)
+# - Commodities (Gold)
+# - FX spot (se aplicável)
+# -----------------------------------------------------
+spot_daily_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/spot/daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# DERIVATIVES (reservado para futuro)
+# -----------------------------------------------------
+derivatives_daily_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/daily
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# LIQUIDITY (on-chain / balance sheet / reserves)
+# -----------------------------------------------------
+liquidity_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/liquidity
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# POSITIONING (COT, funding rates, OI)
+# -----------------------------------------------------
+positioning_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/positioning
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# SENTIMENT (future expansion)
+# -----------------------------------------------------
+sentiment_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/sentiment
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
