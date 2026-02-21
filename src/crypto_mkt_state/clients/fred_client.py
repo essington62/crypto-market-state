@@ -28,13 +28,6 @@ FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 # Internal helpers
 # -------------------------------------------------------------------
 def _resolve_fred_api_key(api_key: Optional[str]) -> str:
-    """
-    Resolve FRED API key.
-
-    Priority:
-    1. Explicit argument
-    2. Environment variable FRED_API_KEY
-    """
     key = api_key or os.getenv("FRED_API_KEY")
     if not key:
         raise RuntimeError("FRED_API_KEY not found in environment or arguments")
@@ -53,12 +46,14 @@ def fetch_fred_series(
     """
     Fetch a single FRED time series.
 
-    Returns raw FRED schema:
-        - date (datetime64[ns, UTC])
-        - value (float, NaN if missing)
-
-    No resampling, no renaming, no enrichment.
+    L1 Contract:
+    - No resampling
+    - No renaming
+    - No enrichment
+    - UTC timestamps
+    - Raw frequency preserved
     """
+
     api_key = _resolve_fred_api_key(api_key)
 
     params: Dict[str, str] = {
@@ -68,6 +63,8 @@ def fetch_fred_series(
         "observation_start": start_date,
     }
 
+    # Same logic as yfinance/binance:
+    # If end_date is None → fetch until today
     if end_date is not None:
         params["observation_end"] = end_date
 
@@ -76,13 +73,24 @@ def fetch_fred_series(
 
     observations = response.json().get("observations", [])
 
-    df = pd.DataFrame(observations, columns=["date", "value"])
+    df = pd.DataFrame(observations)
 
     if df.empty:
         return df
 
+    # Keep only raw schema
+    df = df[["date", "value"]].copy()
+
+    # Enforce UTC
     df["date"] = pd.to_datetime(df["date"], utc=True)
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
+
+    # Sort + deduplicate (L1 hygiene, no transformation)
+    df = (
+        df.sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
 
     return df
 
@@ -99,17 +107,17 @@ def fetch_fred_batch(
     Returns:
         Dict[series_id, DataFrame]
 
-    Designed for use by Kedro PartitionedDataset.
+    Designed for Kedro PartitionedDataset (L1).
     """
+
     output: Dict[str, pd.DataFrame] = {}
 
     for series_id in series_ids:
-        df = fetch_fred_series(
+        output[series_id] = fetch_fred_series(
             series_id=series_id,
             start_date=start_date,
-            end_date=end_date,
+            end_date=end_date,  # None = fetch until today
             api_key=api_key,
         )
-        output[series_id] = df
 
     return output

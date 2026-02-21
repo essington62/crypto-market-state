@@ -64,6 +64,20 @@ fred:
       name: nonfarm_payrolls
       category: growth
 
+# ======================== FRED =======================
+# Adições focadas em Stress e Fragilidade
+# =====================================================
+    - id: STLFSI4
+      name: macro_financial_stress_index
+      category: macro_risk
+
+    - id: RRPONTSYD
+      name: macro_reverse_repo_balance
+      category: macro_liquidity
+
+    - id: TEDRATE
+      name: macro_ted_spread
+      category: macro_credit
 
 # =====================================================
 # ===================== YFINANCE ======================

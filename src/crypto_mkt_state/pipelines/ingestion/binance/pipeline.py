@@ -18,7 +18,7 @@ def create_pipeline() -> Pipeline:
                     "start_date": "params:global.start_date",
                     "interval": "params:global.interval",
                 },
-                outputs="spot_daily_raw",
+                outputs="spot_crypto_daily_24x7_raw",
                 name="load_binance_ohlcv_daily",
             )
         ]

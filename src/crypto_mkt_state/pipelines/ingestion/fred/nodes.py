@@ -1,68 +1,85 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 import pandas as pd
 
 from crypto_mkt_state.clients.fred_client import fetch_fred_batch
 from crypto_mkt_state.utils.utils_temporal import enforce_l1_temporal_contract
 
 
+def _infer_frequency(df: pd.DataFrame) -> str:
+    """
+    Infer frequency from median date diff.
+    Returns: daily | weekly | monthly
+    """
+    if df.empty or len(df) < 3:
+        return "daily"
+
+    diffs = df["date"].diff().dropna()
+    median_days = diffs.dt.days.median()
+
+    if median_days <= 2:
+        return "daily"
+    elif 5 <= median_days <= 10:
+        return "weekly"
+    else:
+        return "monthly"
+
+
 def load_fred_l1(
     series: List[dict],
     start_date: str,
     interval: str,
-    end_date: Optional[str] = None,
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, Dict[str, pd.DataFrame]]:
     """
-    L1 ingestion for FRED macro data.
-
-    Contract (STRICT):
-    - Exact mirror of FRED origin
-    - Original frequency preserved (daily / weekly / monthly)
-    - UTC timestamps
-    - No resampling
-    - No forward-fill
-    - No feature engineering
-    - Only temporal cut enforcement
+    L1 FRED ingestion with automatic frequency routing.
+    Preserves original frequency.
     """
 
     raw = fetch_fred_batch(
         series_ids=[s["id"] for s in series],
         start_date=start_date,
-        end_date=end_date,
+        end_date=None,
     )
 
-    output: Dict[str, pd.DataFrame] = {}
+    daily: Dict[str, pd.DataFrame] = {}
+    weekly: Dict[str, pd.DataFrame] = {}
+    monthly: Dict[str, pd.DataFrame] = {}
 
     for cfg in series:
         series_id = cfg["id"]
         df = raw.get(series_id)
 
         if df is None or df.empty:
-            output[series_id] = df if df is not None else pd.DataFrame()
             continue
 
-        # Defensive copy
         df = df.copy()
-
-        # Ensure UTC
         df["date"] = pd.to_datetime(df["date"], utc=True)
 
-        # Sort & deduplicate
         df = (
             df.sort_values("date")
-              .drop_duplicates(subset=["date"], keep="last")
-              .reset_index(drop=True)
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
         )
 
-        # Enforce temporal cut only (no frequency assertion)
         df = enforce_l1_temporal_contract(
             df=df,
             start_date=start_date,
             interval=interval,
-            assert_daily=False,   # FRED is not necessarily daily
+            assert_daily=False,
         )
 
-        output[series_id] = df
+        freq = _infer_frequency(df)
 
-    return output
+        if freq == "daily":
+            daily[series_id] = df
+        elif freq == "weekly":
+            weekly[series_id] = df
+        else:
+            monthly[series_id] = df
+
+    return {
+        "daily": daily,
+        "weekly": weekly,
+        "monthly": monthly,
+    }

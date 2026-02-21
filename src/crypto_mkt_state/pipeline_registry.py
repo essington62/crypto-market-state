@@ -18,16 +18,10 @@ from crypto_mkt_state.pipelines.ingestion.yfinance.pipeline import (
 # =====================================================
 # ================== L2 NORMALIZATION =================
 # =====================================================
+# L2 is asset-type oriented (spot, macro, etc.), not API-oriented.
 
-from crypto_mkt_state.pipelines.normalization.crypto.pipeline import (
-    create_pipeline as normalization_crypto_pipeline,
-)
-from crypto_mkt_state.pipelines.normalization.fred.pipeline import (
-    create_pipeline as normalization_fred_pipeline,
-)
-from crypto_mkt_state.pipelines.normalization.yfinance.pipeline import (
-    create_pipeline_indices as normalization_yfinance_indices_pipeline,
-    create_pipeline_assets as normalization_yfinance_assets_pipeline,
+from crypto_mkt_state.pipelines.normalization.spot.pipeline import (
+    create_pipeline as normalization_spot_pipeline,
 )
 
 # =====================================================
@@ -71,14 +65,7 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["ingestion.yfinance.assets"] = ingestion_yfinance_assets_pipeline()
 
     # ---------- L2 ----------
-    pipelines["normalization.crypto"] = normalization_crypto_pipeline()
-    pipelines["normalization.fred"] = normalization_fred_pipeline()
-    pipelines["normalization.yfinance.indices"] = (
-        normalization_yfinance_indices_pipeline()
-    )
-    pipelines["normalization.yfinance.assets"] = (
-        normalization_yfinance_assets_pipeline()
-    )
+    pipelines["normalization.spot"] = normalization_spot_pipeline()
 
     # ---------- L3 ----------
     pipelines["primary.crypto"] = primary_crypto_pipeline()

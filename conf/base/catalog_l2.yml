@@ -1,0 +1,18 @@
+# =====================================================
+# ====================== L2 INTERMEDIATE ==============
+# =====================================================
+# Normalization layer: schema standardization, structural integrity.
+# Asset-type oriented (e.g. spot), not API-oriented.
+# All datasets use .parquet.
+
+# -----------------------------------------------------
+# SPOT - DAILY (canonical L2 contract: 24/7 daily)
+# -----------------------------------------------------
+spot_daily_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/spot/daily
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
