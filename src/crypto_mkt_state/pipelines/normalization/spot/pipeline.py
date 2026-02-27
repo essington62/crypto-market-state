@@ -16,7 +16,7 @@ def create_pipeline() -> Pipeline:
         [
             node(
                 func=normalize_spot_daily_partitions,
-                inputs="spot_daily_raw",
+                inputs="spot_crypto_daily_24x7_raw",
                 outputs="spot_daily_clean",
                 name="normalize_spot_daily",
             )

@@ -3,8 +3,9 @@
 # =====================================================
 
 # -----------------------------------------------------
-# MACRO - DAILY
+# MACRO (FRED)
 # -----------------------------------------------------
+
 macro_daily_raw:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/macro/daily
@@ -14,9 +15,6 @@ macro_daily_raw:
     save_args:
       compression: snappy
 
-# -----------------------------------------------------
-# MACRO - WEEKLY
-# -----------------------------------------------------
 macro_weekly_raw:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/macro/weekly
@@ -26,9 +24,6 @@ macro_weekly_raw:
     save_args:
       compression: snappy
 
-# -----------------------------------------------------
-# MACRO - MONTHLY
-# -----------------------------------------------------
 macro_monthly_raw:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/macro/monthly
@@ -40,25 +35,9 @@ macro_monthly_raw:
 
 
 # -----------------------------------------------------
-# SPOT ASSETS (negociáveis)
-# Inclui:
-# - Crypto (Binance)
-# - Equity indices (S&P, Nasdaq)
-# - Commodities (Gold)
-# - FX spot
+# SPOT ASSETS
 # -----------------------------------------------------
-spot_daily_bd_raw:
-  type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/spot/business_day
-  filename_suffix: ".parquet"
-  dataset:
-    type: kedro_datasets.pandas.ParquetDataset
-    save_args:
-      compression: snappy
 
-# -----------------------------------------------------
-# SPOT CRYPTO 24/7 (Binance daily)
-# -----------------------------------------------------
 spot_crypto_daily_24x7_raw:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/spot/crypto/daily_24x7
@@ -68,13 +47,9 @@ spot_crypto_daily_24x7_raw:
     save_args:
       compression: snappy
 
-
-# -----------------------------------------------------
-# DERIVATIVES (futuro)
-# -----------------------------------------------------
-derivatives_daily_raw:
+spot_business_day_raw:
   type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/derivatives/daily
+  path: data/01_raw/spot/business_day
   filename_suffix: ".parquet"
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
@@ -83,11 +58,60 @@ derivatives_daily_raw:
 
 
 # -----------------------------------------------------
-# LIQUIDITY (on-chain / balance sheet / reserves)
+# FUTURES - CRYPTO (BINANCE USDT-M)
 # -----------------------------------------------------
+
+# 1H Perpetual Klines (Preço)
+crypto_perpetual_1h_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/futures/crypto/perpetual/1h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# Funding Rates
+crypto_funding_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/futures/crypto/funding
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# Liquidations
+crypto_liquidations_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/futures/crypto/liquidations
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# Long / Short Ratio (Global Account)
+crypto_long_short_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/futures/crypto/long_short_ratio
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# LIQUIDITY (future on-chain / reserves)
+# -----------------------------------------------------
+
 liquidity_raw:
   type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/liquidity/daily
+  path: data/01_raw/liquidity
   filename_suffix: ".parquet"
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
@@ -96,24 +120,12 @@ liquidity_raw:
 
 
 # -----------------------------------------------------
-# POSITIONING (COT, funding rates, OI)
+# SENTIMENT (future layer)
 # -----------------------------------------------------
-positioning_raw:
-  type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/positioning/daily
-  filename_suffix: ".parquet"
-  dataset:
-    type: kedro_datasets.pandas.ParquetDataset
-    save_args:
-      compression: snappy
 
-
-# -----------------------------------------------------
-# SENTIMENT (futuro)
-# -----------------------------------------------------
 sentiment_raw:
   type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/sentiment/daily
+  path: data/01_raw/sentiment
   filename_suffix: ".parquet"
   dataset:
     type: kedro_datasets.pandas.ParquetDataset

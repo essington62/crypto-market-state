@@ -1,21 +1,30 @@
 # =====================================================
 # ===================== GLOBAL ========================
 # =====================================================
+
 global:
   start_date: "2020-10-01"
   interval: "1d"
   timezone: "UTC"
 
+calendar:
+  business_day_weekmask: "Mon Tue Wed Thu Fri"
+
 
 # =====================================================
 # ====================== BINANCE ======================
 # =====================================================
+
+# 🔹 Mantido no formato original (compatível com Git)
 binance:
   source: "binance"
   market: "spot"
+
   calendar:
-    type: "continuous"        # 24x7
+    type: "continuous"
     timezone: "UTC"
+
+  interval: "1d"
 
   assets:
     - BTCUSDT
@@ -28,13 +37,38 @@ binance:
     - XRPUSDT
 
 
+# 🔹 Futures separado (não conflita com spot)
+binance_futures:
+  source: "binance"
+  market: "usdt_perpetual"
+
+  calendar:
+    type: "continuous"
+    timezone: "UTC"
+
+  base_url: "https://fapi.binance.com"
+
+  symbols:
+    - BTCUSDT
+
+  modules:
+    klines:
+      interval: "1h"
+      limit: 1500
+
+    funding:
+      limit: 1000
+
+
 # =====================================================
 # ======================== FRED =======================
 # =====================================================
+
 fred:
   source: "fred"
+
   calendar:
-    type: "business_days"     # weekdays only
+    type: "business_days"
     timezone: "UTC"
     ffill_allowed: true
 
@@ -42,31 +76,35 @@ fred:
     - id: FEDFUNDS
       name: fed_funds_rate
       category: monetary_policy
+
     - id: DGS2
       name: us_2y_yield
       category: yield_curve
+
     - id: DGS10
       name: us_10y_yield
       category: yield_curve
+
     - id: CPIAUCSL
       name: cpi
       category: inflation
+
     - id: UNRATE
       name: unemployment_rate
       category: labor_market
+
     - id: WALCL
       name: fed_balance_sheet
       category: liquidity
+
     - id: INDPRO
       name: industrial_production
       category: growth
+
     - id: PAYEMS
       name: nonfarm_payrolls
       category: growth
 
-# ======================== FRED =======================
-# Adições focadas em Stress e Fragilidade
-# =====================================================
     - id: STLFSI4
       name: macro_financial_stress_index
       category: macro_risk
@@ -79,370 +117,39 @@ fred:
       name: macro_ted_spread
       category: macro_credit
 
+
 # =====================================================
 # ===================== YFINANCE ======================
 # =====================================================
-# Semantic split: INDICES = macro context (no return/momentum/vol in L3).
-#                 ASSETS = tradable (return/momentum/vol allowed in L3).
+
 yfinance:
   source: "yfinance"
+
   calendar:
-    type: "business_days"     # market calendar
+    type: "business_days"
     timezone: "UTC"
     ffill_allowed: true
 
-  # Macro indices only (volatility, fx) — L3 indices_primary: value/delta/zscore only, NO return/momentum/vol
+  # 🔹 Macro context (vai para macro_daily_raw)
   indices:
     - ticker: "^VIX"
       name: vix
       category: volatility
+
     - ticker: "DX-Y.NYB"
       name: dxy
       category: fx
 
-  # Tradable assets (equity_index, commodity) — L3 assets_primary: return/momentum/vol allowed
+  # 🔹 Tradable assets (vai para spot_business_day_raw)
   assets:
     - ticker: "^GSPC"
       name: sp500
       category: equity_index
+
     - ticker: "^IXIC"
       name: nasdaq
       category: equity_index
+
     - ticker: "GC=F"
       name: gold
       category: commodity
-
-
-# =====================================================
-# ==================== L3 SEMANTIC ====================
-# =====================================================
-# Contrato explícito de features por ativo / índice
-# Qualquer asset fora daqui gera erro (fail-fast)
-
-l3_semantic:
-
-  # --------------------- ASSETS ----------------------
-  assets:
-
-    # ---------- CRYPTO ----------
-    btc:
-      source: binance
-      category: crypto
-      features: &btc_features
-        - return_1d
-        - return_5d
-        - return_21d
-        - rolling_std_21
-        - rolling_std_63
-        - zscore_21
-        - zscore_63
-        - momentum_21
-        - momentum_63
-        # SMA/EMA e relações de preço (heurísticas de mercado; não entram no HMM)
-        - btc_sma_20
-        - btc_sma_50
-        - btc_sma_100
-        - btc_sma_200
-        - btc_ema_20
-        - btc_ema_50
-        - btc_ema_200
-        - btc_close_vs_sma_200
-        - btc_close_above_sma_200
-        - btc_sma_50_vs_200
-        - btc_golden_cross
-
-    eth:
-      source: binance
-      category: crypto
-      features: &crypto_features
-        - return_1d
-        - return_5d
-        - return_21d
-        - rolling_std_21
-        - rolling_std_63
-        - zscore_21
-        - zscore_63
-        - momentum_21
-        - momentum_63
-
-    ada:
-      source: binance
-      category: crypto
-      features: *crypto_features
-
-    sol:
-      source: binance
-      category: crypto
-      features: *crypto_features
-
-    bnb:
-      source: binance
-      category: crypto
-      features: *crypto_features
-
-    avax:
-      source: binance
-      category: crypto
-      features: *crypto_features
-
-    link:
-      source: binance
-      category: crypto
-      features: *crypto_features
-
-    xrp:
-      source: binance
-      category: crypto
-      features: *crypto_features
-
-
-    # ---------- RISK ASSETS (YFINANCE) ----------
-    sp500:
-      source: yfinance
-      category: equity_index
-      features:
-        - return_1d
-        - return_5d
-        - return_21d
-        - rolling_std_21
-        - rolling_std_63
-        - zscore_21
-        - zscore_63
-        - momentum_21
-        - momentum_63
-
-    nasdaq:
-      source: yfinance
-      category: equity_index
-      features:
-        - return_1d
-        - return_5d
-        - return_21d
-        - rolling_std_21
-        - rolling_std_63
-        - zscore_21
-        - zscore_63
-        - momentum_21
-        - momentum_63
-
-    gold:
-      source: yfinance
-      category: commodity
-      features:
-        - return_1d
-        - return_21d
-        - rolling_std_63
-        - zscore_63
-
-
-  # --------------------- INDICES ---------------------
-  indices:
-
-    # ---------- YIELD CURVE ----------
-    us_2y_yield:
-      source: fred
-      category: yield_curve
-      features:
-        - value
-        - delta_1d
-        - delta_21d
-        - zscore_63
-
-    us_10y_yield:
-      source: fred
-      category: yield_curve
-      features:
-        - value
-        - delta_1d
-        - delta_21d
-        - zscore_63
-
-
-    # ---------- VOL / FX ----------
-    vix:
-      source: yfinance
-      category: volatility
-      features:
-        - value
-        - delta_1d
-        - delta_21d
-        - zscore_63
-        - rolling_mean_63
-
-    dxy:
-      source: yfinance
-      category: fx
-      features:
-        - value
-        - delta_1d
-        - delta_21d
-        - zscore_63
-        - rolling_mean_63
-
-
-    # ---------- MACRO ----------
-    fed_funds_rate:
-      source: fred
-      category: monetary_policy
-      features:
-        - value
-        - delta_21d
-        - zscore_63
-
-    cpi:
-      source: fred
-      category: inflation
-      features:
-        - value
-        - delta_21d
-        - zscore_63
-        - rolling_mean_63
-
-    unemployment_rate:
-      source: fred
-      category: labor_market
-      features:
-        - value
-        - delta_21d
-        - zscore_63
-
-    fed_balance_sheet:
-      source: fred
-      category: liquidity
-      features:
-        - value
-        - delta_21d
-        - zscore_63
-
-    industrial_production:
-      source: fred
-      category: growth
-      features:
-        - value
-        - delta_21d
-        - zscore_63
-
-    nonfarm_payrolls:
-      source: fred
-      category: growth
-      features:
-        - value
-        - delta_21d
-        - zscore_63
-
-
-  # ------------------ SEMANTIC CLASSES ----------------
-  overrides:
-
-    btc:
-      class: risk_asset
-    eth:
-      class: risk_asset
-    sp500:
-      class: risk_asset
-    nasdaq:
-      class: risk_asset
-
-    gold:
-      class: defensive_asset
-
-    vix:
-      class: volatility_index
-    dxy:
-      class: dollar_index
-
-    cpi:
-      class: inflation_index
-    fed_funds_rate:
-      class: rates_index
-    us_2y_yield:
-      class: rates_index
-    us_10y_yield:
-      class: rates_index
-
-
-# =====================================================
-# ========================= L4 ========================
-# =====================================================
-# Cross-asset macro regime layer
-# Regimes determinísticos + regime latente (HMM)
-
-l4:
-
-  # ---------------- PROXIES CANÔNICOS -----------------
-  proxies:
-    volatility: vix
-    dollar: dxy
-    rates_long: us_10y_yield
-    rates_short: us_2y_yield
-    inflation: cpi
-
-
-  # ---------------- REGIMES MACRO --------------------
-  regimes:
-
-    volatility:
-      source: vix
-      signal: zscore_63
-      high_threshold: 1.5
-      low_threshold: -1.0
-
-    dollar:
-      source: dxy
-      signal: zscore_63
-      strong_threshold: 1.0
-      weak_threshold: -1.0
-
-    rates:
-      source: us_10y_yield
-      signal: delta_21d
-      rising_threshold: 0.10
-      falling_threshold: -0.10
-
-    inflation:
-      source: cpi
-      signal: zscore_63
-      high_threshold: 1.0
-
-
-  # ---------------- INTERPRETABLE FLAGS ---------------
-  flags:
-
-    risk_off:
-      conditions:
-        - volatility.high
-        - dollar.strong
-
-    risk_on:
-      conditions:
-        - volatility.low
-        - dollar.weak
-
-    tightening:
-      conditions:
-        - rates.rising
-        - inflation.high
-
-    easing:
-      conditions:
-        - rates.falling
-
-
-  # ---------------- VALIDATION CONTRACT ---------------
-  validation:
-    require_all_proxies: true
-    fail_on_missing_features: true
-    allow_partial_history: true
-
-
-  # ---------------- HMM (LATENT REGIME) ----------------
-  hmm:
-    n_components: 3
-    covariance_type: "full"
-    n_iter: 500
-    random_state: 42
-    min_observations: 50
-
-  # ---------------- INFERENCE (VITERBI DIAGNOSTICS) ----------------
-  inference:
-    entropy_threshold: 1.0   # gate: do not run Viterbi when regime_entropy > this

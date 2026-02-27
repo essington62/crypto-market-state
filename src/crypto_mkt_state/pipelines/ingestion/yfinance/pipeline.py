@@ -11,7 +11,7 @@ from .nodes import load_yfinance_indices_l1, load_yfinance_assets_l1
 def create_pipeline_indices(**kwargs) -> Pipeline:
     """
     L1 YFinance macro context.
-    Vai para domínio macro (independente da fonte).
+    Vai para domínio macro.
     """
     return Pipeline(
         [
@@ -20,7 +20,6 @@ def create_pipeline_indices(**kwargs) -> Pipeline:
                 inputs={
                     "indices": "params:yfinance.indices",
                     "start_date": "params:global.start_date",
-                    "interval": "params:global.interval",
                 },
                 outputs="macro_daily_raw",
                 name="load_yfinance_indices_l1",
@@ -32,7 +31,7 @@ def create_pipeline_indices(**kwargs) -> Pipeline:
 def create_pipeline_assets(**kwargs) -> Pipeline:
     """
     L1 YFinance tradable assets (business day).
-    Vai para domínio spot business_day.
+    Vai para domínio spot_business_day.
     """
     return Pipeline(
         [
@@ -41,9 +40,8 @@ def create_pipeline_assets(**kwargs) -> Pipeline:
                 inputs={
                     "assets": "params:yfinance.assets",
                     "start_date": "params:global.start_date",
-                    "interval": "params:global.interval",
                 },
-                outputs="spot_daily_bd_raw",
+                outputs="spot_business_day_raw",
                 name="load_yfinance_assets_l1",
             )
         ]

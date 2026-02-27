@@ -16,3 +16,15 @@ spot_daily_clean:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
+# -----------------------------------------------------
+# SPOT - BUSINESS DAY (derived from 24/7 spot)
+# -----------------------------------------------------
+spot_business_day_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/spot/business_day
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
