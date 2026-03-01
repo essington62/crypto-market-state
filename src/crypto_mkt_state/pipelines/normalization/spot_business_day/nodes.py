@@ -2,31 +2,32 @@
 L2 Spot Business Day: validate and standardize schema for native business-day assets.
 
 For assets already in L1 as business day (e.g. gold, nasdaq, sp500).
-Structural validation only.
-No 24/7 conversion, no aggregation, no calendar transformation.
+
+Contract:
+- Structural validation only.
+- No artificial calendar enforcement.
+- No gap validation (market holidays allowed).
+- No 24/7 conversion.
+- No aggregation or interpolation.
 """
 
 from __future__ import annotations
 
 from typing import Callable, Dict
-
 import pandas as pd
+
 
 REQUIRED_COLUMNS = {"timestamp", "open", "high", "low", "close", "volume"}
 OPTIONAL_COLUMNS = {"trades"}
-
-ONE_DAY = pd.Timedelta(days=1)
-THREE_DAYS = pd.Timedelta(days=3)
 
 
 def validate_business_day_contract(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normalize and validate a single partition to L2 Spot Business Day contract.
 
-    - Renames 'date' -> 'timestamp' if needed.
-    - Enforces canonical schema.
-    - Validates business-day temporal integrity.
-    - Does NOT alter economic values.
+    Structural validation only.
+    Does NOT enforce fixed calendar gaps.
+    Does NOT alter economic values.
     """
 
     if df is None or df.empty:
@@ -50,17 +51,16 @@ def validate_business_day_contract(df: pd.DataFrame) -> pd.DataFrame:
             f"L2 Spot Business Day: missing required columns: {sorted(missing)}."
         )
 
-    # --- Enforce dtypes (structure only)
+    # --- Enforce dtypes
     out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True)
 
     for col in ("open", "high", "low", "close"):
         out[col] = pd.to_numeric(out[col], errors="coerce").astype("float64")
 
-    # volume can remain int64 or float64, but no object allowed
     out["volume"] = pd.to_numeric(out["volume"], errors="coerce")
 
     if "trades" in out.columns:
-        out["trades"] = pd.to_numeric(out["trades"], errors="coerce").astype("int64")
+        out["trades"] = pd.to_numeric(out["trades"], errors="coerce")
 
     # --- Set index
     out = out.set_index("timestamp")
@@ -76,15 +76,6 @@ def validate_business_day_contract(df: pd.DataFrame) -> pd.DataFrame:
 
     if out.index.tz is None or str(out.index.tz) != "UTC":
         raise ValueError("L2 Spot Business Day: timestamp must be UTC.")
-
-    # --- Business-day validation
-    if len(out) > 1:
-        diffs = out.index.to_series().diff().dropna()
-        valid = (diffs == ONE_DAY) | (diffs == THREE_DAYS)
-        if not valid.all():
-            raise ValueError(
-                "L2 Spot Business Day: consecutive timestamps must be 1 or 3 days apart."
-            )
 
     # --- Structural integrity
     if out[["open", "high", "low", "close", "volume"]].isna().any().any():

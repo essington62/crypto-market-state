@@ -130,7 +130,6 @@ yfinance:
     timezone: "UTC"
     ffill_allowed: true
 
-  # 🔹 Macro context (vai para macro_daily_raw)
   indices:
     - ticker: "^VIX"
       name: vix
@@ -140,7 +139,6 @@ yfinance:
       name: dxy
       category: fx
 
-  # 🔹 Tradable assets (vai para spot_business_day_raw)
   assets:
     - ticker: "^GSPC"
       name: sp500
@@ -153,3 +151,36 @@ yfinance:
     - ticker: "GC=F"
       name: gold
       category: commodity
+
+
+# =====================================================
+# ====================== L3 CRYPTO ====================
+# =====================================================
+
+l3:
+  crypto:
+    spot_daily:
+
+      # --- Return windows ---
+      ret_short_window: 7
+      ret_long_window: 30
+
+      # --- Volatility windows ---
+      vol_short_window: 7
+      vol_long_window: 30
+
+      # --- Drawdown window ---
+      drawdown_window: 90
+
+      # --- Moving average window ---
+      ma_window: 30
+
+      # --- Volume normalization ---
+      volume_window: 30
+
+      # --- Feature toggles (baseline v0) ---
+      use_log_returns: true
+      use_vol_ratio: true
+      use_drawdown: true
+      use_volume_zscore: true
+      use_range_relative: true

@@ -28,3 +28,39 @@ spot_business_day_clean:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
+# -----------------------------------------------------
+# MACRO - DAILY
+# -----------------------------------------------------
+macro_daily_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/macro/daily
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# -----------------------------------------------------
+# MACRO - WEEKLY
+# -----------------------------------------------------
+macro_weekly_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/macro/weekly
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# -----------------------------------------------------
+# MACRO - MONTHLY
+# -----------------------------------------------------
+macro_monthly_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/macro/monthly
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy

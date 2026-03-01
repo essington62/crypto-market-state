@@ -41,6 +41,23 @@ from crypto_mkt_state.pipelines.normalization.spot.pipeline import (
 from crypto_mkt_state.pipelines.normalization.spot_business_day.pipeline import (
     create_pipeline as normalization_spot_business_day_pipeline,
 )
+from crypto_mkt_state.pipelines.normalization.macro_daily.pipeline import (
+    create_pipeline as normalization_macro_daily_pipeline,
+)
+from crypto_mkt_state.pipelines.normalization.macro_weekly.pipeline import (
+    create_pipeline as normalization_macro_weekly_pipeline,
+)
+from crypto_mkt_state.pipelines.normalization.macro_monthly.pipeline import (
+    create_pipeline as normalization_macro_monthly_pipeline,
+)
+
+# =====================================================
+# ================== L3 PRIMARY =======================
+# =====================================================
+
+from crypto_mkt_state.pipelines.primary.spot_business_day.pipeline import (
+    create_pipeline as primary_spot_business_day_pipeline,
+)
 
 # =====================================================
 # ==================== REGISTER =======================
@@ -71,6 +88,13 @@ def register_pipelines() -> dict[str, Pipeline]:
 
     pipelines["normalization.spot"] = normalization_spot_pipeline()
     pipelines["normalization.spot_business_day"] = normalization_spot_business_day_pipeline()
+    pipelines["normalization.macro_daily"] = normalization_macro_daily_pipeline()
+    pipelines["normalization.macro_weekly"] = normalization_macro_weekly_pipeline()
+    pipelines["normalization.macro_monthly"] = normalization_macro_monthly_pipeline()
+
+    # ---------------- L3 ----------------
+
+    pipelines["primary.spot_business_day"] = primary_spot_business_day_pipeline()
 
     # ---------------- DEFAULT ----------------
 

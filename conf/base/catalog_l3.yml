@@ -1,0 +1,19 @@
+# =====================================================
+# ====================== L3 PRIMARY ===================
+# =====================================================
+# Primary feature layer (Feature Engineering).
+# No raw mirror. No schema normalization.
+# Only deterministic statistical feature creation.
+# All datasets use .parquet.
+
+# -----------------------------------------------------
+# CRYPTO - SPOT - BUSINESS DAY (Baseline v0 features)
+# -----------------------------------------------------
+spot_business_day_features:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/03_primary/spot/business_day
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
