@@ -1,0 +1,46 @@
+# =====================================================
+# ====================== L4 MODELING ==================
+# =====================================================
+
+# -----------------------------------------------------
+# REGIME HMM - BTC
+# -----------------------------------------------------
+
+btc_regime_states:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_models/regime_hmm/btc_states.parquet
+  save_args:
+    compression: snappy
+
+btc_regime_transition_matrix:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_models/regime_hmm/btc_transition_matrix.parquet
+  save_args:
+    compression: snappy
+
+btc_regime_model:
+  type: kedro_datasets.pickle.PickleDataset
+  filepath: data/05_models/regime_hmm/btc_hmm.pkl
+
+
+
+# -----------------------------------------------------
+# REGIME HMM - BASELINE INPUT (L3 → Modeling)
+# -----------------------------------------------------
+
+btc_spot_crypto_model_input:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/spot/daily/BTCUSDT.parquet
+  load_args:
+    engine: pyarrow
+
+
+# -----------------------------------------------------
+# REGIME HMM - BASELINE OUTPUT
+# -----------------------------------------------------
+
+hmm_walkforward_metrics_l4:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/06_reports/regime_hmm/hmm_walkforward_metrics_l4.parquet
+  save_args:
+    compression: snappy
