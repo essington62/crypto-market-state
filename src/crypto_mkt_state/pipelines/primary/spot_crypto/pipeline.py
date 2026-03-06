@@ -28,7 +28,10 @@ def create_pipeline() -> Pipeline:
             ),
             node(
                 func=extract_btc_model_input,
-                inputs="spot_daily_features",
+                inputs={
+                    "partitions": "spot_daily_features",
+                    "top_positions": "btc_top_position_longshort_l1",
+                },
                 outputs="btc_spot_daily_model_input",
                 name="extract_btc_model_input",
             ),

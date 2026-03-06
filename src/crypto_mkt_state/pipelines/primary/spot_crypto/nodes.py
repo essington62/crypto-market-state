@@ -203,10 +203,12 @@ def create_btc_l3_features(
 
 def extract_btc_model_input(
     partitions: Dict[str, Callable[[], pd.DataFrame]],
+    top_positions: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Extract BTCUSDT from spot_daily_features and return feature-only DataFrame.
 
+    Also joins top_position_ratio from L1 Coinglass long/short top positions.
     Produces btc_spot_daily_model_input (no OHLCV columns).
     Raises ValueError if BTCUSDT partition is missing.
     """
@@ -218,6 +220,14 @@ def extract_btc_model_input(
         )
 
     df = partitions[btc_key]()
-    all_cols = _FEATURE_COLS + _CHARTIST_COLS
+
+    # Join top_position_ratio from L1 Coinglass top positions
+    ratio_col = [c for c in top_positions.columns if "ratio" in c.lower()][0]
+    tp = top_positions[[ratio_col]].rename(columns={ratio_col: "top_position_ratio"})
+    df = df.join(tp, how="left")
+
+    all_cols = _FEATURE_COLS + _CHARTIST_COLS + ["top_position_ratio"]
     available = [c for c in all_cols if c in df.columns]
-    return df[available].copy()
+    out = df[available].copy()
+    out.index.name = "date"
+    return out
