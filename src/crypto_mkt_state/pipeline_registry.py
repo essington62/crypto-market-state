@@ -41,6 +41,8 @@ from crypto_mkt_state.pipelines.normalization.macro_monthly.pipeline import (
 
 from crypto_mkt_state.pipelines.primary.spot_business_day.pipeline import (
     create_pipeline as primary_spot_business_day_pipeline,
+    create_bday_pipeline as primary_spot_crypto_bday_pipeline,
+    create_daily_pipeline as primary_spot_crypto_daily_pipeline,
 )
 
 from crypto_mkt_state.pipelines.primary.spot_crypto.pipeline import (
@@ -53,6 +55,18 @@ from crypto_mkt_state.pipelines.modeling.regime_hmm.pipeline import (
     create_pipeline as modeling_regime_hmm_pipeline,
 )
 
+from crypto_mkt_state.pipelines.modeling.regime_hmm_bday.pipeline import (
+    create_pipeline as modeling_regime_hmm_bday_pipeline,
+)
+
+from crypto_mkt_state.pipelines.modeling.xgb_regime.pipeline import (
+    create_pipeline as modeling_xgb_regime_pipeline,
+)
+
+from crypto_mkt_state.pipelines.ingestion.coinglass.pipeline import (
+    create_pipeline as ingestion_coinglass_pipeline,
+)
+
 # ==================== REGISTER ====================
 
 def register_pipelines() -> dict[str, Pipeline]:
@@ -60,6 +74,7 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines: dict[str, Pipeline] = {}
 
     # L1
+    pipelines["ingestion.coinglass"] = ingestion_coinglass_pipeline()
     pipelines["ingestion.binance.spot"] = ingestion_binance_spot_pipeline()
     pipelines["ingestion.fred"] = ingestion_fred_pipeline()
     pipelines["ingestion.yfinance.indices"] = ingestion_yfinance_indices_pipeline()
@@ -75,9 +90,13 @@ def register_pipelines() -> dict[str, Pipeline]:
     # L3
     pipelines["primary.spot_business_day"] = primary_spot_business_day_pipeline()
     pipelines["primary.spot.crypto"] = primary_spot_crypto_pipeline()
+    pipelines["primary.spot.crypto.bday"] = primary_spot_crypto_bday_pipeline()
+    pipelines["primary.spot.crypto.daily"] = primary_spot_crypto_daily_pipeline()
 
     # MODELING
     pipelines["modeling.regime_hmm"] = modeling_regime_hmm_pipeline()
+    pipelines["modeling.regime_hmm.bday"] = modeling_regime_hmm_bday_pipeline()
+    pipelines["modeling.xgb_regime"] = modeling_xgb_regime_pipeline()
 
     # FULL FLOW (recomendado)
     pipelines["modeling.regime_hmm_full"] = (

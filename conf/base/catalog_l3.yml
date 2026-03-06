@@ -2,12 +2,11 @@
 # ====================== L3 PRIMARY ===================
 # =====================================================
 # Primary feature layer (Feature Engineering).
-# No raw mirror. No schema normalization.
-# Only deterministic statistical feature creation.
+# Deterministic statistical feature creation.
 # All datasets use .parquet.
 
 # -----------------------------------------------------
-# CRYPTO - SPOT - BUSINESS DAY (Baseline v0 features)
+# CRYPTO - SPOT - BUSINESS DAY (Features per asset)
 # -----------------------------------------------------
 spot_business_day_features:
   type: kedro_datasets.partitions.PartitionedDataset
@@ -17,3 +16,80 @@ spot_business_day_features:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
+
+# -----------------------------------------------------
+# CRYPTO - SPOT - BUSINESS DAY (Fase 2 intermediates)
+# -----------------------------------------------------
+btc_bday_features_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/spot/business_day/btc_features_raw.parquet
+  save_args:
+    compression: snappy
+
+btc_cross_crypto_features_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/spot/business_day/btc_cross_crypto_raw.parquet
+  save_args:
+    compression: snappy
+
+btc_spot_bday_model_input:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/spot/business_day/BTCUSDT.parquet
+  save_args:
+    compression: snappy
+
+
+# -----------------------------------------------------
+# CRYPTO - SPOT - BUSINESS DAY (legacy BTC consolidated)
+# -----------------------------------------------------
+btc_spot_business_day_model_input:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/spot/business_day/BTCUSDT.parquet
+  save_args:
+    compression: snappy
+
+
+# -----------------------------------------------------
+# CRYPTO - SPOT - DAILY (Features per asset)
+# -----------------------------------------------------
+spot_daily_features:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/03_primary/spot/daily
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# CRYPTO - SPOT - DAILY (BTC consolidated — original 24/7, no cross)
+# -----------------------------------------------------
+btc_spot_daily_model_input:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/spot/daily/BTCUSDT.parquet
+  save_args:
+    compression: snappy
+
+
+# -----------------------------------------------------
+# CRYPTO - SPOT - DAILY (Fase 2 intermediates)
+# -----------------------------------------------------
+btc_daily_features_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/spot/daily/btc_features_raw.parquet
+  save_args:
+    compression: snappy
+
+btc_cross_crypto_daily_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/spot/daily/btc_cross_crypto_raw.parquet
+  save_args:
+    compression: snappy
+
+btc_spot_daily_model_input_v2:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/spot/daily/BTCUSDT_v2.parquet
+  save_args:
+    compression: snappy

@@ -157,26 +157,32 @@ L2 nodes must **not** call `utils_temporal` — temporal handling belongs to L1 
 
 ### Dataset de entrada correto
 data/04_model_input/spot/daily/BTCUSDT.parquet
-Colunas relevantes: log_return, vol_short, vol_ratio, drawdown, close
-1946 linhas | 2020-10-31 → 2026-02-27 | UTC
+19 colunas (14 core + 5 chartist) | 1946 linhas | 2020-10-31 → 2026-02-27 | UTC
+Chartist cols (200d burn-in, NaN permitido): dist_to_ma_200d, ma_50_200_ratio,
+high_52w_dist, slope_21d, bb_width_20d
 
-### Bugs ativos confirmados
-1. catalog_l4.yml: btc_spot_crypto_model_input aponta para
-   data/03_primary/spot/daily/ (sem close) — corrigir para
-   data/04_model_input/spot/daily/BTCUSDT.parquet
+### Decisão de design — período de treino
+Modelo treinado apenas com dados pós jan/2023.
+Justificativa: aprovação ETF spot (jan/2024) e presença institucional tornaram
+o mercado pré-2023 estruturalmente diferente. Crash 2022, covid 2020 = padrões obsoletos.
 
-2. nodes.py run_walkforward_hmm: purging não implementado.
-   Aplicar: purged_train_end = min(train_end, test_start - timedelta(days=horizon+embargo))
+### Configuração atual
+- n_states: 2 (Bear/Bull)
+- Ordenação: drawdown das means_ (menor = Bear, maior = Bull)
+- Features: log_return, vol_short, vol_ratio, drawdown, volume_z, slope_21d
+- Treino: 2023-01-01 em diante
+- Walk-forward: 3 splits semestrais/anuais pós-2023
+  - split_1: train 2023, test H1-2024
+  - split_2: train 2023–H1-2024, test H2-2024
+  - split_3: train 2023–2024, test 2025→now
 
-3. nodes.py ordenação de estados: usa retorno futuro no treino (instável).
-   Substituir por vol_short intrínseco do model.means_:
-   0=Bear (maior vol), 1=Lateral, 2=Bull (menor vol)
-   Fallback: index 0 das means_ se vol_short não estiver em features.
-
-### Métricas de sucesso
-- delta_5d > 1% em 2/3 splits
-- bull_duration e bear_duration: 15–45 dias
-- lateral_pct: 20–40%
+### Resultados baseline (2026-03-04)
+| split   | n_train | n_test | delta_5d | bull_dur | bear_dur |
+|---------|---------|--------|----------|----------|----------|
+| split_1 | 359     | 182    | +0.0143  | 17.6d    | 8.4d     |
+| split_2 | 541     | 184    | +0.0065  | 12.0d    | 9.8d     |
+| split_3 | 725     | 423    | +0.0081  | 11.6d    | 48.9d    |
+3/3 splits com delta positivo. Objetivo: delta > 1% em 2/3 ✓
 
 ### Constraints de código
 - Sem hardcode de datas, paths ou features

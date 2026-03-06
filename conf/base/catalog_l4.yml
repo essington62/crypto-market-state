@@ -44,3 +44,49 @@ hmm_walkforward_metrics_l4:
   filepath: data/06_reports/regime_hmm/hmm_walkforward_metrics_l4.parquet
   save_args:
     compression: snappy
+
+
+# -----------------------------------------------------
+# REGIME HMM - BDAY (Fase 2)
+# -----------------------------------------------------
+
+btc_spot_bday_model_input_validated:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/spot/business_day/BTCUSDT.parquet
+  load_args:
+    engine: pyarrow
+
+btc_regime_states_bday:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_models/regime_hmm/btc_states_bday.parquet
+  save_args:
+    compression: snappy
+
+btc_regime_walkforward_bday:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/06_reports/regime_hmm/baseline_bday_walkforward_metrics.parquet
+  save_args:
+    compression: snappy
+
+
+# -----------------------------------------------------
+# XGB REGIME (Fase 2A)
+# -----------------------------------------------------
+
+btc_xgb_model_input:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/xgb/btc_xgb_model_input.parquet
+  save_args:
+    compression: snappy
+
+xgb_regime_walkforward_metrics:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/06_reports/xgb_regime/walkforward_metrics.parquet
+  save_args:
+    compression: snappy
+
+xgb_regime_feature_importance:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/06_reports/xgb_regime/feature_importance.parquet
+  save_args:
+    compression: snappy

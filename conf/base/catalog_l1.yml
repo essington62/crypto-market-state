@@ -131,3 +131,47 @@ sentiment_raw:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
       compression: snappy
+
+
+# -----------------------------------------------------
+# COINGLASS — DERIVATIVES + ON-CHAIN SENTIMENT
+# Confirmed available endpoints (validated 2026-03-05)
+# -----------------------------------------------------
+
+# Aggregated liquidations per asset (BTC, ETH)
+coinglass_liquidations_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/liquidations
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# Crypto Fear & Greed Index (global)
+coinglass_fear_greed_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/01_raw/derivatives/coinglass/fear_greed.parquet
+  save_args:
+    compression: snappy
+
+# Bitcoin Bubble Index (on-chain composite)
+coinglass_bubble_index_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/01_raw/derivatives/coinglass/bubble_index.parquet
+  save_args:
+    compression: snappy
+
+# Puell Multiple (miner revenue metric)
+coinglass_puell_multiple_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/01_raw/derivatives/coinglass/puell_multiple.parquet
+  save_args:
+    compression: snappy
+
+# AHR999 Bitcoin valuation index
+coinglass_ahr999_raw:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/01_raw/derivatives/coinglass/ahr999.parquet
+  save_args:
+    compression: snappy
