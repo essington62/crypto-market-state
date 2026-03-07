@@ -189,3 +189,160 @@ o mercado pré-2023 estruturalmente diferente. Crash 2022, covid 2020 = padrões
 - Index sempre DatetimeIndex UTC
 - Código completo nos arquivos afetados — sem snippets parciais
 - Sem prints ou logs customizados
+## Claude Code Operating Rules
+
+Claude must respect the project’s layered data architecture.  
+All code generated must follow these rules strictly.
+
+### Layer Access Rules
+
+Data flows strictly downward:
+
+L1 → L2 → L3 → L4 → Modeling
+
+A layer may only read from the layer immediately below it.
+
+Forbidden access patterns:
+
+L3 reading L1  
+L4 reading L2 directly  
+Modeling reading L2 or L1
+
+Always respect the declared data paths in the catalog.
+
+---
+
+### L1 — Raw Ingestion
+
+Purpose: mirror external APIs.
+
+Allowed:
+- API calls
+- timestamp parsing
+- dtype normalization
+- deduplication
+
+Forbidden:
+- feature engineering
+- rolling windows
+- aggregations
+- resampling
+- forward fill
+- interpolation
+
+L1 output must remain as close as possible to the original API schema.
+
+---
+
+### L2 — Normalization
+
+Purpose: schema harmonization.
+
+Allowed:
+- column renaming
+- dtype enforcement
+- timezone normalization
+- schema validation
+
+Forbidden:
+- feature engineering
+- rolling windows
+- resampling
+- forward fill
+- cross-asset joins
+
+L2 outputs clean but **untransformed** time series.
+
+---
+
+### L3 — Feature Engineering
+
+Purpose: compute market features.
+
+Allowed:
+- rolling windows
+- resampling to daily frequency
+- forward fill (when economically justified)
+- cross-asset feature construction
+- derived indicators
+
+Forbidden:
+- labels for models
+- future leakage
+- lookahead calculations
+
+All windows must be strictly backward-looking.
+
+---
+
+### L4 — Model Input
+
+Purpose: prepare datasets for models.
+
+Allowed:
+- final feature joins
+- feature selection
+- label creation
+- removal of NaN burn-in
+
+Forbidden:
+- feature engineering
+- resampling
+- forward fill
+
+L4 must only assemble previously computed features.
+
+---
+
+### Modeling Rules
+
+Models may only read from:
+
+data/04_model_input/
+
+Model outputs must go to:
+
+data/05_models/
+data/06_reports/
+
+Never read raw or intermediate layers inside modeling pipelines.
+
+---
+
+### Code Generation Constraints
+
+Claude must follow these additional rules when generating code:
+
+- Never hardcode dates or asset lists
+- Always use parameters.yml for configuration
+- Always use DatetimeIndex UTC
+- Prefer pure functions in nodes
+- Avoid side effects in Kedro nodes
+- Never introduce lookahead bias
+
+----
+
+## Arquitetura de Código
+
+### Scripts exploratórios e de validação
+Permitidos em scripts/ e notebooks/
+Uso: prototipagem, validação pontual, extração ad-hoc
+NÃO referenciar no pipeline_registry
+NÃO usar como fonte de dados para modelos
+
+### Pipeline Kedro (fonte da verdade)
+Toda extração que vai para produção DEVE ter
+um node correspondente em pipelines/ingestion/
+Os scripts/ são o rascunho — o Kedro é o contrato
+
+### Fluxo de trabalho aprovado
+1. Prototipar em script/ ou notebook
+2. Validar resultado
+3. Migrar para node Kedro quando estável
+4. Script original pode ser mantido como referência
+   mas o Kedro passa a ser a fonte oficial
+
+### Regra prática para o Claude Code
+- Exploração/validação pontual -> scripts/
+- Dado que entra no modelo -> obrigatoriamente Kedro
+- Nunca ler de scripts/ dentro de um pipeline node
