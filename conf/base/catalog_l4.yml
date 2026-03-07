@@ -12,12 +12,6 @@ btc_regime_states:
   save_args:
     compression: snappy
 
-btc_regime_transition_matrix:
-  type: kedro_datasets.pandas.ParquetDataset
-  filepath: data/05_models/regime_hmm/btc_transition_matrix.parquet
-  save_args:
-    compression: snappy
-
 btc_regime_model:
   type: kedro_datasets.pickle.PickleDataset
   filepath: data/05_models/regime_hmm/btc_hmm.pkl
@@ -88,5 +82,32 @@ xgb_regime_walkforward_metrics:
 xgb_regime_feature_importance:
   type: kedro_datasets.pandas.ParquetDataset
   filepath: data/06_reports/xgb_regime/feature_importance.parquet
+  save_args:
+    compression: snappy
+
+
+# -----------------------------------------------------
+# XGB R5 — Modelo de produção (Fase 1B)
+# -----------------------------------------------------
+
+btc_xgb_r5_model_input:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/xgb_r5/btc_xgb_r5_model_input.parquet
+  save_args:
+    compression: snappy
+
+xgb_r5_model:
+  type: kedro_datasets.pickle.PickleDataset
+  filepath: data/05_models/xgb_r5/model.pkl
+
+xgb_r5_importance:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_models/xgb_r5/importance.parquet
+  save_args:
+    compression: snappy
+
+btc_daily_signal:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/07_output/daily_signal/btc_signal.parquet
   save_args:
     compression: snappy

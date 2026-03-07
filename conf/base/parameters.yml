@@ -222,6 +222,15 @@ l3:
       slope_window: 21
       bb_window: 20
 
+      # --- Technical features (R5 approved) ---
+      rsi_short_window: 14
+      rsi_long_window: 30
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal_period: 9
+      atr_window: 14
+      range_window: 30
+
 # =====================================================
 # ==================== MODELING =======================
 # =====================================================
@@ -383,3 +392,61 @@ xgb_regime:
       horizon_days: 5
       bull_threshold: 0.015
       bear_threshold: 0.010
+
+
+# ------------------------------------------------------------
+# XGB R5 — Modelo de produção (Fase 1B)
+#
+# Aprovado após 6 rodadas de ablação.
+# Config final: BASE + STRUCTURE + MOMENTUM (21 features)
+# Resultados walk-forward: delta médio +0.0139 (2/3 splits)
+#
+# Treino: 2023-01-01 em diante (pós-FTX, era ETF)
+# Label: return_5d = sum(log_return.shift(-k), k=1..5)
+# ------------------------------------------------------------
+xgb_r5:
+  train_start: "2023-01-01"
+
+  # Features ordenadas: BASE → STRUCTURE → MOMENTUM
+  features:
+    # BASE (8)
+    - log_return
+    - vol_short
+    - vol_ratio
+    - drawdown
+    - volume_z
+    - slope_21d
+    - hmm_state
+    - bull_prob
+    - regime_strength
+    # STRUCTURE (6 — bb_width_20d equivalente ao bb_width dos scripts)
+    - price_vs_high_30d
+    - price_vs_low_30d
+    - range_position_30d
+    - bb_position
+    - bb_width_20d
+    - atr_14_norm
+    # MOMENTUM (6)
+    - rsi_14_z
+    - rsi_30
+    - macd_hist_norm
+    - roc_5
+    - roc_10
+    - roc_21
+
+  model:
+    n_estimators: 300
+    max_depth: 4
+    learning_rate: 0.03
+    subsample: 0.8
+    colsample_bytree: 0.7
+    min_child_weight: 3
+    gamma: 0.5
+    random_state: 42
+
+  signal:
+    threshold_long: 0.60
+    threshold_short: 0.40
+    strong_bull_prob: 0.65
+    strong_bear_prob: 0.35
+    strong_prob_threshold: 0.65

@@ -57,6 +57,24 @@ _CHARTIST_COLS = [
     "bb_width_20d",
 ]
 
+# Technical features approved in XGBoost R5 ablation (Fase 1B).
+# Shorter burn-in (~30d). NaN permitted in early history.
+_TECH_COLS = [
+    # MOMENTUM
+    "rsi_14_z",
+    "rsi_30",
+    "macd_hist_norm",
+    "roc_5",
+    "roc_10",
+    "roc_21",
+    # STRUCTURE
+    "price_vs_high_30d",
+    "price_vs_low_30d",
+    "range_position_30d",
+    "bb_position",
+    "atr_14_norm",
+]
+
 
 def create_btc_l3_features(
     partitions: Dict[str, Callable[[], pd.DataFrame]],
@@ -94,6 +112,13 @@ def create_btc_l3_features(
     ma_52w_window: int = int(params["ma_52w_window"])
     slope_window: int = int(params["slope_window"])
     bb_window: int = int(params["bb_window"])
+    rsi_short_window: int = int(params["rsi_short_window"])
+    rsi_long_window: int = int(params["rsi_long_window"])
+    macd_fast: int = int(params["macd_fast"])
+    macd_slow: int = int(params["macd_slow"])
+    macd_signal_period: int = int(params["macd_signal_period"])
+    atr_window: int = int(params["atr_window"])
+    range_window: int = int(params["range_window"])
 
     results: Dict[str, pd.DataFrame] = {}
 
@@ -193,6 +218,61 @@ def create_btc_l3_features(
         # Bollinger Band width (20d)
         out["bb_width_20d"] = compute_bb_width_20d(close, bb_window)
 
+        # ── Technical features — R5 approved (Fase 1B) ────────────────────
+
+        # RSI — short and long
+        _delta = close.diff()
+        _gain_s = _delta.clip(lower=0).rolling(rsi_short_window).mean()
+        _loss_s = (-_delta.clip(upper=0)).rolling(rsi_short_window).mean()
+        _rs_s = _gain_s / _loss_s.replace(0, np.nan)
+        _rsi_14 = 100 - (100 / (1 + _rs_s))
+        out["rsi_14_z"] = (_rsi_14 - 50) / 20
+
+        _gain_l = _delta.clip(lower=0).rolling(rsi_long_window).mean()
+        _loss_l = (-_delta.clip(upper=0)).rolling(rsi_long_window).mean()
+        _rs_l = _gain_l / _loss_l.replace(0, np.nan)
+        out["rsi_30"] = 100 - (100 / (1 + _rs_l))
+
+        # MACD histogram normalised by close
+        _ema_fast = close.ewm(span=macd_fast, adjust=False).mean()
+        _ema_slow = close.ewm(span=macd_slow, adjust=False).mean()
+        _macd_line = _ema_fast - _ema_slow
+        _macd_sig = _macd_line.ewm(span=macd_signal_period, adjust=False).mean()
+        out["macd_hist_norm"] = (_macd_line - _macd_sig) / close
+
+        # Rate of change
+        out["roc_5"]  = close.pct_change(5)
+        out["roc_10"] = close.pct_change(10)
+        out["roc_21"] = close.pct_change(21)
+
+        # Range-based structure
+        _high_range = close.rolling(range_window).max()
+        _low_range  = close.rolling(range_window).min()
+        _range_span = _high_range - _low_range
+        out["price_vs_high_30d"]  = (close - _high_range) / _high_range
+        out["price_vs_low_30d"]   = (close - _low_range) / _low_range
+        out["range_position_30d"] = np.where(
+            _range_span > 0, (close - _low_range) / _range_span, np.nan
+        )
+
+        # Bollinger band position (reuses bb_window param)
+        _bb_mid  = close.rolling(bb_window).mean()
+        _bb_std  = close.rolling(bb_window).std()
+        _bb_upper = _bb_mid + 2 * _bb_std
+        _bb_lower = _bb_mid - 2 * _bb_std
+        _bb_range = _bb_upper - _bb_lower
+        out["bb_position"] = np.where(
+            _bb_range > 0, (close - _bb_lower) / _bb_range, np.nan
+        )
+
+        # ATR normalised (requires high and low from L2)
+        _tr = pd.concat([
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low  - close.shift(1)).abs(),
+        ], axis=1).max(axis=1)
+        out["atr_14_norm"] = _tr.rolling(atr_window).mean() / close
+
         # Drop burn-in rows where any feature is NaN
         out = out.dropna(subset=_FEATURE_COLS)
 
@@ -226,7 +306,7 @@ def extract_btc_model_input(
     tp = top_positions[[ratio_col]].rename(columns={ratio_col: "top_position_ratio"})
     df = df.join(tp, how="left")
 
-    all_cols = _FEATURE_COLS + _CHARTIST_COLS + ["top_position_ratio"]
+    all_cols = _FEATURE_COLS + _CHARTIST_COLS + _TECH_COLS + ["top_position_ratio"]
     available = [c for c in all_cols if c in df.columns]
     out = df[available].copy()
     out.index.name = "date"

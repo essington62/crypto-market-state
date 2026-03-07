@@ -63,6 +63,10 @@ from crypto_mkt_state.pipelines.modeling.xgb_regime.pipeline import (
     create_pipeline as modeling_xgb_regime_pipeline,
 )
 
+from crypto_mkt_state.pipelines.modeling.xgb_r5.pipeline import (
+    create_pipeline as modeling_xgb_r5_pipeline,
+)
+
 from crypto_mkt_state.pipelines.ingestion.coinglass.pipeline import (
     create_pipeline as ingestion_coinglass_pipeline,
 )
@@ -97,6 +101,7 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["modeling.regime_hmm"] = modeling_regime_hmm_pipeline()
     pipelines["modeling.regime_hmm.bday"] = modeling_regime_hmm_bday_pipeline()
     pipelines["modeling.xgb_regime"] = modeling_xgb_regime_pipeline()
+    pipelines["modeling.xgb_r5"] = modeling_xgb_r5_pipeline()
 
     # FULL FLOW (recomendado)
     pipelines["modeling.regime_hmm_full"] = (
