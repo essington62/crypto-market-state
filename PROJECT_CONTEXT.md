@@ -1,0 +1,455 @@
+Project: BTC Regime Model
+
+
+## Project Overview
+
+A **Kedro**-based ML pipeline for crypto market state modeling. The system ingests raw market data (Binance, Yahoo Finance, FRED), normalizes it through a layered architecture, engineers features, and trains Hidden Markov Models (HMMs) to detect market regimes (bull, bear, transition).
+
+## Environment Setup
+
+```bash
+conda env create -f environment.yml
+conda activate crypto_market_state
+pip install -e .
+```
+
+Key dependencies: `kedro==1.2.0`, `kedro-datasets==9.1.1`, `hmmlearn`, `fredapi`, `python-binance`, `yfinance`, `hmmlearn`, `optuna`.
+
+## Common Commands
+
+```bash
+# Run a specific pipeline
+kedro run --pipeline ingestion.binance.spot
+kedro run --pipeline normalization.spot
+kedro run --pipeline primary.spot.crypto
+kedro run --pipeline modeling.regime_hmm
+
+# Run the full HMM pipeline (L3 + modeling)
+kedro run --pipeline modeling.regime_hmm_full
+
+# List all registered pipelines
+kedro registry list
+
+# Launch Jupyter
+kedro jupyter lab
+
+# Validate pipeline graph (no run)
+kedro pipeline describe --pipeline <name>
+```
+
+## Layered Architecture
+
+All data flows strictly downward through layers. **No layer may read from or write to a layer above it.**
+
+| Layer | Kedro Stage | Data Path | Role |
+|-------|------------|-----------|------|
+| **L1** | `ingestion.*` | `data/01_raw/` | Raw API mirror — no transformations |
+| **L2** | `normalization.*` | `data/02_intermediate/` | Schema normalization only |
+| **L3** | `primary.*` | `data/03_primary/` | Per-asset feature engineering |
+| **Modeling** | `modeling.*` | `data/04_model_input/`, `data/05_models/` | HMM training & walk-forward validation |
+
+### Data Sources
+
+- **Binance** (`ingestion.binance.spot`): Crypto spot OHLCV (BTC, ETH, BNB, SOL, ADA, AVAX, LINK, XRP) — 24/7 continuous calendar
+- **Yahoo Finance** (`ingestion.yfinance.*`): VIX, DXY, SP500, NASDAQ, Gold — business day calendar
+- **FRED** (`ingestion.fred`): FEDFUNDS, DGS2, DGS10, CPI, UNRATE, WALCL, INDPRO, PAYEMS, STLFSI4, RRPONTSYD, TEDRATE — business day calendar
+
+### Normalization (L2)
+
+L2 modules are **asset-type oriented** (not exchange/API oriented). All pipelines produce:
+- `timestamp` as the universal DatetimeIndex (UTC) — always renamed from `open_time` or `date`
+- Unmodified values from L1 — no fills, no resampling, no feature engineering
+
+Active L2 pipelines:
+- `normalization.spot` → `spot_daily_clean` (Binance 24/7)
+- `normalization.spot_business_day` → `spot_business_day_clean` (aligned to business days)
+- `normalization.macro_daily/weekly/monthly` → `macro_*_clean`
+
+### Feature Engineering (L3)
+
+Per-asset only. No cross-asset aggregation. Features: log returns (1d/7d/21d/63d), volatility (rolling std, price range, realized vol), volume z-scores, buy pressure, price momentum (MA, slope, position), candle ratios, Hurst exponent, and autocorrelation.
+
+The 44 primary features are added to each asset DataFrame, which preserves all L2 columns.
+
+### Modeling
+
+`modeling.regime_hmm`: Walk-forward HMM validation across 3 time splits (2023, 2024, 2025). Uses BTC L3 features (`log_return`, `vol_short`, `vol_ratio`). Input: `btc_spot_crypto_model_input`. Output: `hmm_walkforward_metrics_l4`.
+
+## Pipeline Registry
+
+All pipelines must be registered in `src/crypto_mkt_state/pipeline_registry.py`. The naming convention is dot-separated: `ingestion.binance.spot`, `normalization.spot`, `primary.spot.crypto`, `modeling.regime_hmm`.
+
+**`__default__`** is set to `modeling.regime_hmm` (not the full flow).
+
+## Catalog Structure
+
+Each layer has a dedicated catalog file:
+- `conf/base/catalog_l1.yml` — raw PartitionedDatasets
+- `conf/base/catalog_l2.yml` — intermediate PartitionedDatasets
+- `conf/base/catalog_l3.yml` — primary features + model inputs
+- `conf/base/catalog_l4.yml` — model outputs and reports
+
+`settings.py` configures the catalog loader to auto-discover all `catalog*.yml` files.
+
+## Parameters
+
+All pipeline parameters live in `conf/base/parameters.yml`. The global `start_date` (`params:global.start_date`) is the single source of truth for all L1 pipelines — **never define `start_date` locally in a module**.
+
+Additional model parameters (HMM states, walk-forward splits) are in `conf/base/parameters/hmm_2states.yml`.
+
+## Critical Contracts
+
+### L1 Contract
+- Mirror of API — forbidden: feature engineering, aggregations, rolling windows, z-scores, interpolation
+- All timestamps must be `datetime64[ns, UTC]`
+- Binance pagination must use **forward** cursor strategy (`startTime`), with `max_iter` guard and `RATE_LIMIT_SLEEP_SEC = 0.4`
+- `drop_duplicates(open_time)` is mandatory at the end of each ingestion node
+- Cast numerics with `pd.to_numeric(..., errors="coerce").astype("float64")` — never raw `.astype()`
+
+### L2 Contract
+- Only allowed: column renaming, index setting, dtype enforcement, structural validation
+- Forbidden: rolling, z-score, returns, fill, resample, interpolation, cross-asset harmonization
+- `timestamp` (UTC DatetimeIndex) is the universal canonical name for all time columns
+- Raise `ValueError` on integrity violations — never fill missing values
+
+### L3 Contract
+- Per-asset features only; no cross-asset operations
+- All windows are strictly backward-looking (no lookahead)
+- L2 columns are always preserved unchanged
+- NaN is permitted at the start of a series (window burn-in), not filled
+
+### L4 (Cross-Asset) Contract
+- Pure function nodes — no IO, no Kedro internals
+- Join only on `date` (inner join — intersection of dates)
+- No resampling, forward-fill, or interpolation
+- Select assets/series by `asset`/`category` metadata, not by raw tickers
+
+## Module Structure for New Pipelines
+
+**L1 ingestion:**
+```
+src/crypto_mkt_state/pipelines/ingestion/<exchange>/<market>/<module>/
+  __init__.py  # empty
+  nodes.py     # extraction logic
+  pipeline.py  # Kedro Pipeline definition
+```
+
+**L2 normalization:**
+```
+src/crypto_mkt_state/pipelines/normalization/<asset_type>/
+```
+
+After creating any module: update `pipeline_registry.py`, add datasets to the appropriate `catalog_l*.yml`, add parameters to `parameters.yml`, and verify with `kedro registry list`.
+
+## Utilities
+
+- `src/crypto_mkt_state/utils/utils_temporal.py` — temporal helpers (used only in L1)
+- `src/crypto_mkt_state/utils/utils_l3_semantic.py` — L3 feature computation helpers
+- `src/crypto_mkt_state/clients/` — API clients for Binance, YFinance, and FRED
+
+L2 nodes must **not** call `utils_temporal` — temporal handling belongs to L1 only.
+
+## Current Focus — Fase 1A: HMM Walk-Forward
+
+### Objetivo
+Δ5d = E[R5d|Bull] − E[R5d|Bear] > 1% em 2/3 splits out-of-sample.
+
+### Dataset de entrada correto
+data/04_model_input/spot/daily/BTCUSDT.parquet
+19 colunas (14 core + 5 chartist) | 1946 linhas | 2020-10-31 → 2026-02-27 | UTC
+Chartist cols (200d burn-in, NaN permitido): dist_to_ma_200d, ma_50_200_ratio,
+high_52w_dist, slope_21d, bb_width_20d
+
+### Decisão de design — período de treino
+Modelo treinado apenas com dados pós jan/2023.
+Justificativa: aprovação ETF spot (jan/2024) e presença institucional tornaram
+o mercado pré-2023 estruturalmente diferente. Crash 2022, covid 2020 = padrões obsoletos.
+
+### Configuração atual
+- n_states: 2 (Bear/Bull)
+- Ordenação: drawdown das means_ (menor = Bear, maior = Bull)
+- Features: log_return, vol_short, vol_ratio, drawdown, volume_z, slope_21d
+- Treino: 2023-01-01 em diante
+- Walk-forward: 3 splits semestrais/anuais pós-2023
+  - split_1: train 2023, test H1-2024
+  - split_2: train 2023–H1-2024, test H2-2024
+  - split_3: train 2023–2024, test 2025→now
+
+### Resultados baseline (2026-03-04)
+| split   | n_train | n_test | delta_5d | bull_dur | bear_dur |
+|---------|---------|--------|----------|----------|----------|
+| split_1 | 359     | 182    | +0.0143  | 17.6d    | 8.4d     |
+| split_2 | 541     | 184    | +0.0065  | 12.0d    | 9.8d     |
+| split_3 | 725     | 423    | +0.0081  | 11.6d    | 48.9d    |
+3/3 splits com delta positivo. Objetivo: delta > 1% em 2/3 ✓
+
+### Constraints de código
+- Sem hardcode de datas, paths ou features
+- Index sempre DatetimeIndex UTC
+- Código completo nos arquivos afetados — sem snippets parciais
+- Sem prints ou logs customizados
+## Claude Code Operating Rules
+
+Claude must respect the project’s layered data architecture.  
+All code generated must follow these rules strictly.
+
+### Layer Access Rules
+
+Data flows strictly downward:
+
+L1 → L2 → L3 → L4 → Modeling
+
+A layer may only read from the layer immediately below it.
+
+Forbidden access patterns:
+
+L3 reading L1  
+L4 reading L2 directly  
+Modeling reading L2 or L1
+
+Always respect the declared data paths in the catalog.
+
+---
+
+### L1 — Raw Ingestion
+
+Purpose: mirror external APIs.
+
+Allowed:
+- API calls
+- timestamp parsing
+- dtype normalization
+- deduplication
+
+Forbidden:
+- feature engineering
+- rolling windows
+- aggregations
+- resampling
+- forward fill
+- interpolation
+
+L1 output must remain as close as possible to the original API schema.
+
+---
+
+### L2 — Normalization
+
+Purpose: schema harmonization.
+
+Allowed:
+- column renaming
+- dtype enforcement
+- timezone normalization
+- schema validation
+
+Forbidden:
+- feature engineering
+- rolling windows
+- resampling
+- forward fill
+- cross-asset joins
+
+L2 outputs clean but **untransformed** time series.
+
+---
+
+### L3 — Feature Engineering
+
+Purpose: compute market features.
+
+Allowed:
+- rolling windows
+- resampling to daily frequency
+- forward fill (when economically justified)
+- cross-asset feature construction
+- derived indicators
+
+Forbidden:
+- labels for models
+- future leakage
+- lookahead calculations
+
+All windows must be strictly backward-looking.
+
+---
+
+### L4 — Model Input
+
+Purpose: prepare datasets for models.
+
+Allowed:
+- final feature joins
+- feature selection
+- label creation
+- removal of NaN burn-in
+
+Forbidden:
+- feature engineering
+- resampling
+- forward fill
+
+L4 must only assemble previously computed features.
+
+---
+
+### Modeling Rules
+
+Models may only read from:
+
+data/04_model_input/
+
+Model outputs must go to:
+
+data/05_models/
+data/06_reports/
+
+Never read raw or intermediate layers inside modeling pipelines.
+
+---
+
+### Code Generation Constraints
+
+Claude must follow these additional rules when generating code:
+
+- Never hardcode dates or asset lists
+- Always use parameters.yml for configuration
+- Always use DatetimeIndex UTC
+- Prefer pure functions in nodes
+- Avoid side effects in Kedro nodes
+- Never introduce lookahead bias
+
+----
+
+## Arquitetura de Código
+
+### Scripts exploratórios e de validação
+Permitidos em scripts/ e notebooks/
+Uso: prototipagem, validação pontual, extração ad-hoc
+NÃO referenciar no pipeline_registry
+NÃO usar como fonte de dados para modelos
+
+### Pipeline Kedro (fonte da verdade)
+Toda extração que vai para produção DEVE ter
+um node correspondente em pipelines/ingestion/
+Os scripts/ são o rascunho — o Kedro é o contrato
+
+### Fluxo de trabalho aprovado
+1. Prototipar em script/ ou notebook
+2. Validar resultado
+3. Migrar para node Kedro quando estável
+4. Script original pode ser mantido como referência
+   mas o Kedro passa a ser a fonte oficial
+
+### Regra prática para o Claude Code
+- Exploração/validação pontual -> scripts/
+- Dado que entra no modelo -> obrigatoriamente Kedro
+- Nunca ler de scripts/ dentro de um pipeline node
+
+## Current Production Model — R11
+
+The current best-performing model is **R11**, which combines:
+
+- HMM regime detection
+- XGBoost directional models
+- Ensemble confirmation rule
+
+### Model Stack
+
+Layer 1 — Regime Detection  
+Gaussian HMM (2 states)
+
+Features:
+- log_return
+- vol_short
+- vol_ratio
+- drawdown
+- volume_z
+- slope_21d
+- top_position_ratio
+
+Layer 2 — Directional Models
+
+R5:
+XGBoost classifier predicting probability of positive 5-day return.
+
+R7b:
+XGBoost regression predicting normalized return:
+
+return_5d / vol_21
+
+Layer 3 — Ensemble Rule (R8-A)
+
+Signal rules:
+
+LONG if:
+R5 == LONG
+AND
+R7b > 70th percentile
+
+SHORT if:
+R5 == SHORT
+AND
+R7b < 30th percentile
+
+Otherwise → NEUTRAL
+
+### Final Feature Set (TOP10)
+
+1 atr_14_norm  
+2 bb_width_20d  
+3 vol_ratio  
+4 roc_21  
+5 slope_21d  
+6 bb_position  
+7 price_vs_high_30d  
+8 range_position_30d  
+9 drawdown  
+10 macd_hist_norm
+
+### Prediction Horizon
+
+5-day forward return.
+
+### Trading Frequency
+
+Trades occur only when ensemble confirmation is triggered.
+
+Typical signal distribution:
+
+LONG ~35–40%  
+SHORT ~10–15%  
+NEUTRAL ~45–50%
+
+### Backtest Results (2024-01 → 2026-03)
+
+CAGR: ~39%  
+Sharpe: ~1.40  
+Max Drawdown: ~65%  
+Profit Factor: ~2.23
+
+## Current Development Roadmap
+
+Immediate priorities:
+
+1 — Productionize R11 model
+- create daily inference pipeline
+- store signals in signals_daily dataset
+
+2 — Implement daily ingestion update
+- incremental update for Binance, FRED, Yahoo
+- detect last available timestamp in parquet
+- fetch only new data
+
+3 — Implement risk management layer
+- volatility scaling
+- regime-aware position sizing
+- drawdown control
+
+4 — Build paper trading engine
+- simulate trades based on daily signals
+- track equity curve and drawdown
+
+5 — Prepare intraday data ingestion (1h)
+- Binance OHLCV 1h
+- Coinglass derivatives metrics
