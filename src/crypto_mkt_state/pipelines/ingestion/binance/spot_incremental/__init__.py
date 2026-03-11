@@ -1,0 +1,2 @@
+"""Binance ingestion pipeline."""
+

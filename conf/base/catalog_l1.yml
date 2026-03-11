@@ -15,6 +15,15 @@ macro_daily_raw:
     save_args:
       compression: snappy
 
+macro_daily_incremental:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/macro/daily
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
 macro_weekly_raw:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/macro/weekly
@@ -51,6 +60,59 @@ spot_business_day_raw:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/spot/business_day
   filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+spot_business_day_incremental:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/spot/business_day
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# -----------------------------------------------------
+# SPOT ASSETS
+# -----------------------------------------------------
+
+# Dataset intermediário usado pelo pipeline incremental (daily)
+spot_crypto_daily_24x7_updated:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/spot/crypto/daily_24x7
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# SPOT CRYPTO — INTRADAY (1H)
+# -----------------------------------------------------
+
+
+spot_crypto_1h_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/spot/crypto/1h
+  filename_suffix: ".parquet"
+
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+  load_args:
+    ignore_missing: true
+
+
+spot_crypto_1h_updated:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/spot/crypto/1h
+  filename_suffix: ".parquet"
+
   dataset:
     type: kedro_datasets.pandas.ParquetDataset
     save_args:
@@ -183,3 +245,26 @@ btc_top_position_longshort_l1:
   filepath: data/01_raw/derivatives/coinglass/long_short_ratio/BTCUSDT_top_positions.parquet
   load_args:
     engine: pyarrow
+
+
+# -----------------------------------------------------
+# COINGLASS — INTRADAY DERIVATIVES (1H)
+# -----------------------------------------------------
+
+coinglass_derivatives_1h_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/1h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+coinglass_derivatives_1h_updated:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/1h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy

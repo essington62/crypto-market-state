@@ -115,7 +115,7 @@ def fetch_liquidations(params: dict[str, Any]) -> dict[str, pd.DataFrame]:
     Columns: aggregated_long_liquidation_usd, aggregated_short_liquidation_usd
     Returns: {"BTCUSDT": df, "ETHUSDT": df}
     """
-    cg             = params["coinglass"]
+    cg             = params
     start_date     = cg["start_date"]
     sleep_sec      = cg["request_sleep"]
     exchange_list  = cg.get("liquidation_exchange_list", "ALL")
@@ -184,7 +184,7 @@ def fetch_fear_greed(params: dict[str, Any]) -> pd.DataFrame:
 
     Columns: fear_greed_value, btc_price
     """
-    cg         = params["coinglass"]
+    cg         = params
     start_date = cg["start_date"]
 
     raw = _fetch("/api/index/fear-greed-history", {}, cg)
@@ -223,7 +223,7 @@ def fetch_bubble_index(params: dict[str, Any]) -> pd.DataFrame:
     Columns: price, bubble_index, mining_difficulty,
              transaction_count, address_send_count
     """
-    cg         = params["coinglass"]
+    cg         = params
     start_date = cg["start_date"]
 
     VALUE_FIELDS = [
@@ -253,7 +253,7 @@ def fetch_puell_multiple(params: dict[str, Any]) -> pd.DataFrame:
 
     Columns: price, puell_multiple
     """
-    cg         = params["coinglass"]
+    cg         = params
     start_date = cg["start_date"]
 
     raw = _fetch("/api/index/puell-multiple", {}, cg)
@@ -278,7 +278,7 @@ def fetch_ahr999(params: dict[str, Any]) -> pd.DataFrame:
 
     Columns: average_price, ahr999_value
     """
-    cg         = params["coinglass"]
+    cg         = params
     start_date = cg["start_date"]
 
     raw = _fetch("/api/index/ahr999", {}, cg)

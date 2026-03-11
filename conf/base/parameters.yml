@@ -15,7 +15,6 @@ calendar:
 # ====================== BINANCE ======================
 # =====================================================
 
-# 🔹 Mantido no formato original (compatível com Git)
 binance:
   source: "binance"
   market: "spot"
@@ -26,6 +25,21 @@ binance:
 
   interval: "1d"
 
+  # used to bootstrap incremental pipeline when no partitions exist
+  dummy: null
+
+  # usado pelo pipeline incremental
+  spot_symbols:
+    - BTCUSDT
+    - ETHUSDT
+    - BNBUSDT
+    - SOLUSDT
+    - ADAUSDT
+    - AVAXUSDT
+    - LINKUSDT
+    - XRPUSDT
+
+  # mantido para compatibilidade com ingestão full
   assets:
     - BTCUSDT
     - ETHUSDT
@@ -37,27 +51,35 @@ binance:
     - XRPUSDT
 
 
-# 🔹 Futures separado (não conflita com spot)
-binance_futures:
+# =====================================================
+# ================= BINANCE INTRADAY ==================
+# =====================================================
+
+binance_intraday:
+
   source: "binance"
-  market: "usdt_perpetual"
+  market: "spot"
 
   calendar:
     type: "continuous"
     timezone: "UTC"
 
-  base_url: "https://fapi.binance.com"
+  interval: "1h"
 
-  symbols:
+  # used for incremental pipelines
+  dummy: null
+
+  assets:
     - BTCUSDT
+    - ETHUSDT
+    - BNBUSDT
+    - SOLUSDT
+    - ADAUSDT
+    - AVAXUSDT
+    - LINKUSDT
+    - XRPUSDT
 
-  modules:
-    klines:
-      interval: "1h"
-      limit: 1500
-
-    funding:
-      limit: 1000
+  start_date: "2024-01-01"
 
 
 # =====================================================
@@ -73,6 +95,7 @@ fred:
     ffill_allowed: true
 
   series:
+
     - id: FEDFUNDS
       name: fed_funds_rate
       category: monetary_policy
@@ -131,6 +154,7 @@ yfinance:
     ffill_allowed: true
 
   indices:
+
     - ticker: "^VIX"
       name: vix
       category: volatility
@@ -140,6 +164,7 @@ yfinance:
       category: fx
 
   assets:
+
     - ticker: "^GSPC"
       name: sp500
       category: equity_index
@@ -158,71 +183,59 @@ yfinance:
 # =====================================================
 
 l3:
+
   crypto:
 
     spot_business_day:
-      # --- Volatility windows ---
+
       vol_short_window: 7
       vol_long_window: 30
 
-      # --- Drawdown window ---
       drawdown_window: 90
 
-      # --- Volume normalization ---
       volume_window: 30
 
-      # --- Chartist / structural features ---
       slope_window: 21
       bb_window: 20
       ma_50_window: 50
       ma_200_window: 200
       ma_52w_window: 252
 
-      # --- Cross-crypto features ---
       rs_window: 5
       beta_window: 30
       dd_rel_window: 90
 
     spot_daily:
 
-      # --- Return windows ---
       ret_short_window: 7
       ret_long_window: 30
 
-      # --- Volatility windows ---
       vol_short_window: 7
       vol_long_window: 30
 
-      # --- Drawdown window ---
       drawdown_window: 90
 
-      # --- Moving average window ---
       ma_window: 30
 
-      # --- Volume normalization ---
       volume_window: 30
 
-      # --- Feature toggles (baseline v0) ---
       use_log_returns: true
       use_vol_ratio: true
       use_drawdown: true
       use_volume_zscore: true
       use_range_relative: true
 
-      # --- Higher-order moment / predictability features ---
       skew_window: 30
       kurt_window: 30
       hurst_window: 30
       er_window: 10
 
-      # --- Chartist / structural features ---
       ma_200_window: 200
       ma_50_window: 50
       ma_52w_window: 252
       slope_window: 21
       bb_window: 20
 
-      # --- Technical features (R5 approved) ---
       rsi_short_window: 14
       rsi_long_window: 30
       macd_fast: 12
@@ -231,23 +244,22 @@ l3:
       atr_window: 14
       range_window: 30
 
+
 # =====================================================
 # ==================== MODELING =======================
 # =====================================================
 
 modeling:
+
   regime_hmm:
 
-    # --- Core HMM ---
     n_states: 2
-    covariance_type: "diag"      # full | diag — Config E aprovado Rodada 4
+    covariance_type: "diag"
     n_iter: 1000
     random_state: 42
 
-    # --- Preprocessing ---
     standardize: true
 
-    # --- Features to use (BASE + slope_21d + top_position_ratio, n_states=2) ---
     features:
       - log_return
       - vol_short
@@ -257,36 +269,18 @@ modeling:
       - slope_21d
       - top_position_ratio
 
-# ------------------------------------------------------------
-# WALK-FORWARD CONFIGURATION — HMM BASELINE (Fase 1A)
-#
-# Objetivo:
-# Validar robustez temporal do HMM via 3 splits progressivos
-# com purging para evitar vazamento de informação.
-#
-# horizon_days:
-# Horizonte prospectivo usado na métrica principal (Δ 5d).
-#
-# embargo_days:
-# Dias adicionais removidos do final do treino para garantir
-# zero sobreposição entre janela de treino e retorno futuro do teste.
-#
-# purge_total = horizon_days + embargo_days
-#
-# Estrutura dos splits:
-# Expansive window (treino cumulativo) + teste anual.
-# Isso mede consistência estrutural do regime ao longo de
-# diferentes ciclos de mercado (recovery, bull, regime recente).
-#
-# Este bloco define o BASELINE OFICIAL do modelo.
-# Nenhuma feature nova deve ser adicionada antes da
-# validação completa destes 3 splits.
-# ------------------------------------------------------------
+
+# =====================================================
+# ==================== WALKFORWARD ====================
+# =====================================================
+
 walkforward:
+
   horizon_days: 5
   embargo_days: 2
 
   splits:
+
     - name: split_1
       train_start: 2023-01-01
       train_end:   2023-12-31
@@ -305,47 +299,26 @@ walkforward:
       test_start:  2025-01-01
       test_end:    null
 
-# ------------------------------------------------------------
-# HMM BASELINE FEATURES (Minimalista)
-#
-# Conjunto inicial propositalmente enxuto para:
-# - Estabelecer baseline econômico
-# - Medir Δ prospectivo real
-# - Evitar multicolinearidade excessiva
-#
-# Expansões futuras devem ser testadas isoladamente
-# e comparadas contra este baseline.
-# ------------------------------------------------------------
+
 # =====================================================
-# =================== COINGLASS ======================
-# =====================================================
-#
-# Confirmed available endpoints (validated 2026-03-05):
-#   liquidation/aggregated-history  (exchange_list required)
-#   fear-greed-history
-#   bitcoin/bubble-index
-#   puell-multiple
-#   ahr999
-#
-# NOT available on current plan (404):
-#   fundingRate, openInterest, globalLongShortAccountRatio,
-#   nupl, altcoin_season, stablecoin_mcap, etf_flows, etf_netassets
+# ==================== COINGLASS ======================
 # =====================================================
 
 coinglass:
+
   api:
     base_url: "https://open-api-v4.coinglass.com"
 
   assets:
     - symbol: "BTC"
       pair: "BTCUSDT"
+
     - symbol: "ETH"
       pair: "ETHUSDT"
 
   interval: "1d"
   start_date: "2020-10-01"
 
-  # exchange_list for liquidation/aggregated-history (required by API)
   liquidation_exchange_list: "ALL"
 
   retry_attempts: 3
@@ -353,100 +326,27 @@ coinglass:
   request_sleep: 3.0
 
 
-# ------------------------------------------------------------
-# XGB REGIME (Fase 2A Baseline)
-#
-# 12 features: 6 BTC core + 4 cross-crypto + 2 HMM context
-# Labels: 3-class ternary per horizon (Bear=0, Neutral=1, Bull=2)
-# Walk-forward: same 3 splits as HMM baseline
-# ------------------------------------------------------------
-xgb_regime:
-  features:
-    - log_return
-    - vol_short
-    - vol_ratio
-    - drawdown
-    - volume_z
-    - slope_21d
-    - eth_btc_rs_5d
-    - alt_dispersion_5d
-    - mean_alt_beta_30d
-    - mean_alt_dd_rel
-    - hmm_state
-    - hmm_bull_prob
+# =====================================================
+# =============== COINGLASS INTRADAY 1H ===============
+# =====================================================
 
-  n_estimators: 200
-  max_depth: 4
-  learning_rate: 0.05
-  subsample: 0.8
-  colsample_bytree: 0.8
-  random_state: 42
+coinglass_intraday:
 
-  horizons:
-    - name: horizon_2d
-      horizon_days: 2
-      bull_threshold: 0.010
-      bear_threshold: 0.007
+  source: "coinglass"
 
-    - name: horizon_5d
-      horizon_days: 5
-      bull_threshold: 0.015
-      bear_threshold: 0.010
+  interval: "1h"
 
+  dummy: null
 
-# ------------------------------------------------------------
-# XGB R5 — Modelo de produção (Fase 1B)
-#
-# Aprovado após 6 rodadas de ablação.
-# Config final: BASE + STRUCTURE + MOMENTUM (21 features)
-# Resultados walk-forward: delta médio +0.0139 (2/3 splits)
-#
-# Treino: 2023-01-01 em diante (pós-FTX, era ETF)
-# Label: return_5d = sum(log_return.shift(-k), k=1..5)
-# ------------------------------------------------------------
-xgb_r5:
-  train_start: "2023-01-01"
+  assets:
+    - BTC
+    - ETH
 
-  # Features ordenadas: BASE → STRUCTURE → MOMENTUM
-  features:
-    # BASE (8)
-    - log_return
-    - vol_short
-    - vol_ratio
-    - drawdown
-    - volume_z
-    - slope_21d
-    - hmm_state
-    - bull_prob
-    - regime_strength
-    # STRUCTURE (6 — bb_width_20d equivalente ao bb_width dos scripts)
-    - price_vs_high_30d
-    - price_vs_low_30d
-    - range_position_30d
-    - bb_position
-    - bb_width_20d
-    - atr_14_norm
-    # MOMENTUM (6)
-    - rsi_14_z
-    - rsi_30
-    - macd_hist_norm
-    - roc_5
-    - roc_10
-    - roc_21
+  start_date: "2024-01-01"
 
-  model:
-    n_estimators: 300
-    max_depth: 4
-    learning_rate: 0.03
-    subsample: 0.8
-    colsample_bytree: 0.7
-    min_child_weight: 3
-    gamma: 0.5
-    random_state: 42
-
-  signal:
-    threshold_long: 0.60
-    threshold_short: 0.40
-    strong_bull_prob: 0.65
-    strong_bear_prob: 0.35
-    strong_prob_threshold: 0.65
+  endpoints:
+    open_interest: true
+    funding_rate: true
+    liquidations: true
+    long_short_ratio: true
+    taker_volume: true
