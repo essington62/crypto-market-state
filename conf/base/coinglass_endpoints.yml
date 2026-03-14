@@ -1,0 +1,216 @@
+coinglass_api:
+
+  base_url: "https://open-api-v4.coinglass.com"
+
+  endpoints:
+
+    # =====================================================
+    # OPEN INTEREST
+    # Plan: ~6 months of 4h history (max 1080 candles)
+    # time_params not supported — returns 400 "time error"
+    # =====================================================
+
+    open_interest_history:
+      path: "/api/futures/open-interest/history"
+
+      required_params:
+        exchange: "Binance"
+        symbol: "BTCUSDT"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+        unit: "usd"
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        open: "open"
+        high: "high"
+        low: "low"
+        close: "close"
+
+
+    open_interest_aggregated_history:
+      path: "/api/futures/open-interest/aggregated-history"
+
+      required_params:
+        symbol: "BTC"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+        unit: "usd"
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        open: "open"
+        high: "high"
+        low: "low"
+        close: "close"
+
+
+    # =====================================================
+    # FUNDING RATE
+    # Same plan restriction: max 1080 candles, no time params
+    # =====================================================
+
+    funding_rate_history:
+      path: "/api/futures/funding-rate/history"
+
+      required_params:
+        exchange: "Binance"
+        symbol: "BTCUSDT"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        open: "open"
+        high: "high"
+        low: "low"
+        close: "close"
+
+
+    funding_rate_oi_weight_history:
+      path: "/api/futures/funding-rate/oi-weight-history"
+
+      required_params:
+        symbol: "BTC"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        open: "open"
+        high: "high"
+        low: "low"
+        close: "close"
+
+
+    funding_rate_vol_weight_history:
+      path: "/api/futures/funding-rate/vol-weight-history"
+
+      required_params:
+        symbol: "BTC"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        open: "open"
+        high: "high"
+        low: "low"
+        close: "close"
+
+
+    # =====================================================
+    # LIQUIDATIONS
+    # Returning 404 on current plan — kept for future use
+    # =====================================================
+
+    pair_liquidation_history:
+      path: "/api/futures/liquidation/history"
+
+      required_params:
+        exchange: "Binance"
+        symbol: "BTCUSDT"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        long_liquidation_usd: "longLiquidationUsd"
+        short_liquidation_usd: "shortLiquidationUsd"
+
+
+    coin_liquidation_history:
+      path: "/api/futures/liquidation/aggregated-history"
+
+      required_params:
+        exchange_list: "Binance"
+        symbol: "BTC"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        long_liquidation_usd: "longLiquidationUsd"
+        short_liquidation_usd: "shortLiquidationUsd"
+
+
+    # =====================================================
+    # LONG / SHORT SENTIMENT
+    # Returning 404 on current plan — kept for future use
+    # =====================================================
+
+    global_long_short_account_ratio_history:
+      path: "/api/futures/global-long-short-account-ratio/history"
+
+      required_params:
+        exchange: "Binance"
+        symbol: "BTCUSDT"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        long_account: "longAccount"
+        short_account: "shortAccount"
+        long_short_ratio: "longShortRatio"
+
+
+    taker_buy_sell_volume_history:
+      path: "/api/futures/v2/taker-buy-sell-volume/history"
+
+      required_params:
+        exchange: "Binance"
+        symbol: "BTCUSDT"
+        interval: "4h"
+
+      optional_params:
+        limit: 1080
+
+      response_format:
+        data_field: "data"
+
+      fields:
+        timestamp: "time"
+        buy_volume: "takerBuyVolume"
+        sell_volume: "takerSellVolume"
+        buy_sell_ratio: "buySellRatio"

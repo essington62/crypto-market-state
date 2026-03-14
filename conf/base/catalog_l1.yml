@@ -90,13 +90,13 @@ spot_crypto_daily_24x7_updated:
 
 
 # -----------------------------------------------------
-# SPOT CRYPTO — INTRADAY (1H)
+# SPOT CRYPTO — INTRADAY (4H)
 # -----------------------------------------------------
 
 
-spot_crypto_1h_raw:
+spot_crypto_4h_raw:
   type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/spot/crypto/1h
+  path: data/01_raw/spot/crypto/4h
   filename_suffix: ".parquet"
 
   dataset:
@@ -108,9 +108,9 @@ spot_crypto_1h_raw:
     ignore_missing: true
 
 
-spot_crypto_1h_updated:
+spot_crypto_4h_updated:
   type: kedro_datasets.partitions.PartitionedDataset
-  path: data/01_raw/spot/crypto/1h
+  path: data/01_raw/spot/crypto/4h
   filename_suffix: ".parquet"
 
   dataset:
@@ -263,6 +263,42 @@ coinglass_derivatives_1h_raw:
 coinglass_derivatives_1h_updated:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/derivatives/coinglass/1h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# Production 4h derivatives pipeline output
+coinglass_derivatives_4h_updated:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/4h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# COINGLASS — TEST Open Interest 1h (BTC only)
+# Endpoint under test: /api/futures/openInterest/ohlc-aggregated-history
+# Pipeline: ingestion.coinglass.test_open_interest_1h
+# -----------------------------------------------------
+
+coinglass_oi_1h_test_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/1h_test
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+coinglass_oi_1h_test_updated:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/1h_test
   filename_suffix: ".parquet"
   dataset:
     type: kedro_datasets.pandas.ParquetDataset

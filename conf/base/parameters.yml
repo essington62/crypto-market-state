@@ -3,7 +3,7 @@
 # =====================================================
 
 global:
-  start_date: "2020-10-01"
+  start_date: "2023-01-01"
   interval: "1d"
   timezone: "UTC"
 
@@ -52,6 +52,12 @@ binance:
 
 
 # =====================================================
+# ================= NORMALIZATION — SPOT 4H ===========
+# =====================================================
+
+normalization.spot_intraday_4h:
+  max_candles: 1080   # ≈ 6 months at 4h interval; aligns with Coinglass Hobbyist window
+
 # ================= BINANCE INTRADAY ==================
 # =====================================================
 
@@ -64,7 +70,7 @@ binance_intraday:
     type: "continuous"
     timezone: "UTC"
 
-  interval: "1h"
+  interval: "4h"
 
   # used for incremental pipelines
   dummy: null
@@ -327,26 +333,26 @@ coinglass:
 
 
 # =====================================================
-# =============== COINGLASS INTRADAY 1H ===============
+# ============= COINGLASS INTRADAY 4H =================
 # =====================================================
 
 coinglass_intraday:
 
-  source: "coinglass"
-
-  interval: "1h"
-
-  dummy: null
-
-  assets:
-    - BTC
-    - ETH
+  interval: "4h"
 
   start_date: "2024-01-01"
 
-  endpoints:
-    open_interest: true
-    funding_rate: true
-    liquidations: true
-    long_short_ratio: true
-    taker_volume: true
+  # Pair-level symbols (used for endpoints that require exchange + BTCUSDT format)
+  assets:
+    - BTCUSDT
+    - ETHUSDT
+
+  # Coin-level symbols (used for endpoints that require BTC / ETH format)
+  coins:
+    - BTC
+    - ETH
+
+  exchange: "Binance"
+
+  # Bootstrap value when no existing partition is present
+  dummy: null

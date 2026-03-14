@@ -110,7 +110,7 @@ def _normalize_klines_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def update_binance_spot_1h_incremental(
+def update_binance_spot_4h_incremental(
     existing_data: Dict[str, Callable[[], pd.DataFrame]] | None,
     spot_symbols: List[str],
     interval: str,
@@ -118,7 +118,7 @@ def update_binance_spot_1h_incremental(
 ) -> Dict[str, pd.DataFrame]:
 
     if not spot_symbols:
-        raise ValueError("binance_spot_1h_incremental: asset list empty")
+        raise ValueError("binance_spot_4h_incremental: asset list empty")
 
     # IMPORTANT: handle empty partition dataset
     existing_data = existing_data or {}
@@ -259,7 +259,7 @@ def update_binance_spot_1h_incremental(
     report_df = pd.DataFrame(report_rows)
 
     print("\n==============================================")
-    print("BINANCE 1H INCREMENTAL UPDATE REPORT")
+    print("BINANCE 4H INCREMENTAL UPDATE REPORT")
     print("==============================================")
     print(report_df.to_string(index=False))
     print("==============================================\n")

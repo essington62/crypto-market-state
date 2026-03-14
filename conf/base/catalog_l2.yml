@@ -6,6 +6,18 @@
 # All datasets use .parquet.
 
 # -----------------------------------------------------
+# SPOT - INTRADAY 4H
+# -----------------------------------------------------
+spot_crypto_4h_normalized:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/spot/crypto/4h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# -----------------------------------------------------
 # SPOT - DAILY (canonical L2 contract: 24/7 daily)
 # -----------------------------------------------------
 spot_daily_clean:

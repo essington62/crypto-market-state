@@ -10,8 +10,8 @@ from crypto_mkt_state.pipelines.ingestion.binance.spot_incremental.pipeline impo
     create_pipeline as ingestion_binance_spot_incremental_pipeline,
 )
 
-from crypto_mkt_state.pipelines.ingestion.binance.spot_1h.pipeline import (
-    create_pipeline as ingestion_binance_spot_1h_pipeline,
+from crypto_mkt_state.pipelines.ingestion.binance.spot_4h.pipeline import (
+    create_pipeline as ingestion_binance_spot_4h_pipeline,
 )
 
 from crypto_mkt_state.pipelines.ingestion.fred.pipeline import (
@@ -30,10 +30,15 @@ from crypto_mkt_state.pipelines.ingestion.yfinance.yfinance_incremental.pipeline
 )
 
 from crypto_mkt_state.pipelines.ingestion.coinglass.intraday_1h.pipeline import (
-    create_pipeline as ingestion_coinglass_derivatives_1h_pipeline,
+    create_pipeline as ingestion_coinglass_derivatives_4h_pipeline,
 )
 
+
 # ==================== L2 ====================
+
+from crypto_mkt_state.pipelines.normalization.spot_intraday_4h.pipeline import (
+    create_pipeline as normalization_spot_intraday_4h_pipeline,
+)
 
 from crypto_mkt_state.pipelines.normalization.spot.pipeline import (
     create_pipeline as normalization_spot_pipeline,
@@ -86,7 +91,7 @@ def register_pipelines() -> dict[str, Pipeline]:
         ingestion_binance_spot_incremental_pipeline()
     )
 
-    pipelines["ingestion.binance.spot_1h"] = ingestion_binance_spot_1h_pipeline()
+    pipelines["ingestion.binance.spot_4h"] = ingestion_binance_spot_4h_pipeline()
 
     pipelines["ingestion.fred"] = ingestion_fred_pipeline()
 
@@ -98,11 +103,14 @@ def register_pipelines() -> dict[str, Pipeline]:
 
     pipelines["ingestion.yfinance.incremental"] = ingestion_yfinance_incremental_pipeline()
 
-    pipelines["ingestion.coinglass.derivatives_1h"] = (
-        ingestion_coinglass_derivatives_1h_pipeline()
+    pipelines["ingestion.coinglass.derivatives_4h"] = (
+        ingestion_coinglass_derivatives_4h_pipeline()
     )
 
+
     # ==================== L2 ====================
+
+    pipelines["normalization.spot_intraday_4h"] = normalization_spot_intraday_4h_pipeline()
 
     pipelines["normalization.spot"] = normalization_spot_pipeline()
 

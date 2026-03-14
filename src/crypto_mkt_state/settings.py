@@ -33,6 +33,16 @@ CONFIG_LOADER_ARGS = {
     "default_run_env": "local",
     "config_patterns": {
         "catalog": ["catalog*", "catalog*/**", "**/catalog*"],
+        # Extend parameters to also pick up:
+        #   conf/base/coinglass_endpoints.yml  → params:coinglass_api.*
+        #   conf/local/secrets.yml             → params:api_keys.*
+        "parameters": [
+            "parameters*",
+            "parameters*/**",
+            "**/parameters*",
+            "coinglass_endpoints*",
+            "secrets*",
+        ],
     },
 }
 
