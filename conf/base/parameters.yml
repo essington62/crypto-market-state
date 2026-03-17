@@ -252,6 +252,32 @@ l3:
 
 
 # =====================================================
+# =========== PRIMARY — DERIVATIVES 4H ================
+# =====================================================
+
+primary.derivatives_4h:
+  oi_momentum_window: 3         # candles (3 × 4h = 12h)
+  oi_volatility_window: 6       # candles (6 × 4h = 24h)
+  funding_pressure_window: 180  # candles for z-score (≈ 30 days at 4h)
+
+
+# =====================================================
+# =========== PRIMARY — ORDER BOOK 4H =================
+# =====================================================
+
+primary.orderbook_4h:
+  rolling_window: 6   # candles (6 × 4h = 24h) — used for imbalance_ma, imbalance_std, depth_zscore
+
+
+# =====================================================
+# =========== PRIMARY — REGIME CONTEXT ================
+# =====================================================
+
+primary.regime_context:
+  r11_model_path: "scripts/paper_trading/state/r11_hmm_model.pkl"
+
+
+# =====================================================
 # ==================== MODELING =======================
 # =====================================================
 
@@ -356,3 +382,161 @@ coinglass_intraday:
 
   # Bootstrap value when no existing partition is present
   dummy: null
+
+
+# =====================================================
+# ========= COINGLASS — ORDER BOOK DEPTH (4H) =========
+# =====================================================
+
+ingestion.coinglass.orderbook_4h:
+  exchange: "Binance"
+  interval: "4h"
+  limit: 1000
+  ranges:
+    - "0.5"
+    - "1"
+    - "2"
+  assets:
+    - "BTCUSDT"
+  sleep_between_ranges: 0.3
+  sleep_between_assets: 0.5
+  # Bootstrap value — allows the pipeline to start without existing partitions.
+  # PartitionedDataset raises "No partitions found" on an empty/missing path,
+  # so existing_data is wired to this null param (same pattern as
+  # coinglass_intraday). The node handles None → {}.
+  dummy: null
+
+
+# =====================================================
+# ============== MODELING — ENTRY 4H ==================
+# =====================================================
+
+modeling.entry_4h:
+
+  # Target configuration
+  target_col: "close"
+  target_horizon: 6          # shift(-6) → 24h direction at 4h cadence
+  # regime_filter removed — regime is a feature in SET_B/C/D, not a row filter.
+  # r11_regime and r11_prob_bull teach the model to avoid Bear entries naturally.
+
+  # Feature sets — evaluated incrementally (A ⊂ B ⊂ C ⊂ D)
+  feature_sets:
+
+    SET_A:
+      - returns_4h
+      - volatility_24h
+      - volume_zscore
+      - buy_pressure
+      - price_range_4h
+
+    SET_B:
+      - returns_4h
+      - volatility_24h
+      - volume_zscore
+      - buy_pressure
+      - price_range_4h
+      - r11_prob_bull
+      - r11_entropy
+      - regime_age_log
+      - stress_score
+
+    SET_C:
+      - returns_4h
+      - volatility_24h
+      - volume_zscore
+      - buy_pressure
+      - price_range_4h
+      - r11_prob_bull
+      - r11_entropy
+      - regime_age_log
+      - stress_score
+      - oi_momentum_12h
+      - oi_volatility_24h
+      - funding_pressure
+      - funding_divergence
+      - leverage_expansion
+
+    SET_D:
+      - returns_4h
+      - volatility_24h
+      - volume_zscore
+      - buy_pressure
+      - price_range_4h
+      - r11_prob_bull
+      - r11_entropy
+      - regime_age_log
+      - stress_score
+      - oi_momentum_12h
+      - oi_volatility_24h
+      - funding_pressure
+      - funding_divergence
+      - leverage_expansion
+      - book_imbalance_r05
+      - book_imbalance_r1
+      - book_imbalance_r2
+      - bid_ask_ratio_r1
+      - book_depth_r1
+      - depth_gradient_near
+      - depth_gradient_far
+      - total_depth
+      - imbalance_ma_6
+      - imbalance_std_6
+      - depth_zscore_24h
+      - oi_momentum_mean_24h
+      - funding_divergence_mean_24h
+      - leverage_expansion_mean_24h
+      - vol_percentile_30d
+
+  # Walk-forward splits — positional indices on the prepared dataset
+  # Gap of target_horizon rows prevents target_direction_24h lookahead
+  # Splits designed around regime distribution:
+  #   [0:100]   Bull=33  Bear=67  | [100:200] Bull=70  Bear=30
+  #   [200:300] Bull=11  Bear=89  | [300:400] Bull=93  Bear=7
+  #   [400:500] Bull=76  Bear=24  | [500:600] Bull=17  Bear=83
+  #   [600:700] Bull=0   Bear=100 | [700:800] Bull=73  Bear=27
+  #   [800:900] Bull=88  Bear=12  | [900:1000] Bull=34 Bear=66
+  splits:
+    - name: "split_1_mixed"
+      train_end: 400
+      gap_end:   406
+      test_end:  600
+      note: "train=sep→nov | test=nov/dec mixed Bull/Bear"
+
+    - name: "split_2_bear_heavy"
+      train_end: 500
+      gap_end:   506
+      test_end:  750
+      note: "train=sep→dec | test=dec/jan Bear dominant"
+
+    - name: "split_3_bull_heavy"
+      train_end: 650
+      gap_end:   656
+      test_end:  850
+      note: "train=sep→jan | test=jan/feb Bull dominant"
+
+    - name: "split_4_recent"
+      train_end: 800
+      gap_end:   806
+      test_end:  1000
+      note: "train=sep→feb | test=feb/mar mixed"
+
+  # Entry signal thresholds
+  signal:
+    entry_prob_threshold: 0.60   # model must predict prob > 0.60 to signal entry
+    confidence_threshold: 0.10   # abs(p - 0.5) > 0.10 → candle is "confident"
+
+  # LightGBM hyperparameters
+  lgbm:
+    objective: binary
+    metric: auc
+    n_estimators: 300
+    learning_rate: 0.02
+    num_leaves: 15
+    min_child_samples: 30
+    subsample: 0.8
+    colsample_bytree: 0.8
+    class_weight: balanced
+    random_state: 42
+    n_jobs: -1
+    early_stopping_rounds: 100
+    verbose: -1

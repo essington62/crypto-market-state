@@ -1,0 +1,16 @@
+# =====================================================
+# =================== L5 MODEL FEATURES ==============
+# =====================================================
+# Final model-ready datasets: L3/L4 features joined,
+# regime context forward-filled, training target added.
+# All datasets use .parquet.
+
+# -----------------------------------------------------
+# 4H MODEL FEATURES — BTC
+# -----------------------------------------------------
+
+btc_model_features_4h:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_model_features/4h/BTCUSDT.parquet
+  save_args:
+    compression: snappy

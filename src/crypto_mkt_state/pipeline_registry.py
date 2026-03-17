@@ -33,8 +33,16 @@ from crypto_mkt_state.pipelines.ingestion.coinglass.intraday_1h.pipeline import 
     create_pipeline as ingestion_coinglass_derivatives_4h_pipeline,
 )
 
+from crypto_mkt_state.pipelines.ingestion.coinglass.orderbook_4h.pipeline import (
+    create_pipeline as ingestion_coinglass_orderbook_4h_pipeline,
+)
+
 
 # ==================== L2 ====================
+
+from crypto_mkt_state.pipelines.normalization.derivatives_4h.pipeline import (
+    create_pipeline as normalization_derivatives_4h_pipeline,
+)
 
 from crypto_mkt_state.pipelines.normalization.spot_intraday_4h.pipeline import (
     create_pipeline as normalization_spot_intraday_4h_pipeline,
@@ -60,7 +68,31 @@ from crypto_mkt_state.pipelines.normalization.macro_monthly.pipeline import (
     create_pipeline as normalization_macro_monthly_pipeline,
 )
 
+from crypto_mkt_state.pipelines.normalization.orderbook_4h.pipeline import (
+    create_pipeline as normalization_orderbook_4h_pipeline,
+)
+
 # ==================== L3 ====================
+
+from crypto_mkt_state.pipelines.primary.derivatives_4h.pipeline import (
+    create_pipeline as primary_derivatives_4h_pipeline,
+)
+
+from crypto_mkt_state.pipelines.primary.orderbook_4h.pipeline import (
+    create_pipeline as primary_orderbook_4h_pipeline,
+)
+
+from crypto_mkt_state.pipelines.primary.spot_4h.pipeline import (
+    create_pipeline as primary_spot_4h_pipeline,
+)
+
+from crypto_mkt_state.pipelines.primary.model_features_4h.pipeline import (
+    create_pipeline as primary_model_features_4h_pipeline,
+)
+
+from crypto_mkt_state.pipelines.primary.regime_context.pipeline import (
+    create_pipeline as primary_regime_context_pipeline,
+)
 
 from crypto_mkt_state.pipelines.primary.spot_business_day.pipeline import (
     create_pipeline as primary_spot_business_day_pipeline,
@@ -74,6 +106,10 @@ from crypto_mkt_state.pipelines.primary.spot_crypto.pipeline import (
 
 from crypto_mkt_state.pipelines.modeling.regime_hmm.pipeline import (
     create_pipeline as modeling_regime_hmm_pipeline,
+)
+
+from crypto_mkt_state.pipelines.modeling.entry_4h.pipeline import (
+    create_pipeline as modeling_entry_4h_pipeline,
 )
 
 # ==================== REGISTER ====================
@@ -107,8 +143,16 @@ def register_pipelines() -> dict[str, Pipeline]:
         ingestion_coinglass_derivatives_4h_pipeline()
     )
 
+    pipelines["ingestion.coinglass.orderbook_4h"] = (
+        ingestion_coinglass_orderbook_4h_pipeline()
+    )
+
 
     # ==================== L2 ====================
+
+    pipelines["normalization.derivatives_4h"] = normalization_derivatives_4h_pipeline()
+
+    pipelines["normalization.orderbook_4h"] = normalization_orderbook_4h_pipeline()
 
     pipelines["normalization.spot_intraday_4h"] = normalization_spot_intraday_4h_pipeline()
 
@@ -126,6 +170,16 @@ def register_pipelines() -> dict[str, Pipeline]:
 
     # ==================== L3 ====================
 
+    pipelines["primary.derivatives_4h"] = primary_derivatives_4h_pipeline()
+
+    pipelines["primary.orderbook_4h"] = primary_orderbook_4h_pipeline()
+
+    pipelines["primary.spot_4h"] = primary_spot_4h_pipeline()
+
+    pipelines["primary.model_features_4h"] = primary_model_features_4h_pipeline()
+
+    pipelines["primary.regime_context"] = primary_regime_context_pipeline()
+
     pipelines["primary.spot_business_day"] = primary_spot_business_day_pipeline()
 
     pipelines["primary.spot.crypto"] = primary_spot_crypto_pipeline()
@@ -133,6 +187,8 @@ def register_pipelines() -> dict[str, Pipeline]:
     # ==================== MODELING ====================
 
     pipelines["modeling.regime_hmm"] = modeling_regime_hmm_pipeline()
+
+    pipelines["modeling.entry_4h"] = modeling_entry_4h_pipeline()
 
     # ==================== FULL FLOW ====================
 

@@ -111,3 +111,14 @@ btc_daily_signal:
   filepath: data/07_output/daily_signal/btc_signal.parquet
   save_args:
     compression: snappy
+
+
+# -----------------------------------------------------
+# REGIME CONTEXT — DAILY (L4 consolidated)
+# -----------------------------------------------------
+
+btc_regime_context_daily:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/04_model_input/regime_context/daily/BTCUSDT.parquet
+  save_args:
+    compression: snappy

@@ -6,6 +6,24 @@
 # All datasets use .parquet.
 
 # -----------------------------------------------------
+# SPOT — 4H (BTC features)
+# -----------------------------------------------------
+btc_spot_features_4h:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/spot/4h/BTCUSDT.parquet
+  save_args:
+    compression: snappy
+
+# -----------------------------------------------------
+# DERIVATIVES — COINGLASS 4H (BTC features)
+# -----------------------------------------------------
+btc_coinglass_features_4h:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/derivatives/coinglass/BTCUSDT_4h.parquet
+  save_args:
+    compression: snappy
+
+# -----------------------------------------------------
 # CRYPTO - SPOT - BUSINESS DAY (Features per asset)
 # -----------------------------------------------------
 spot_business_day_features:
@@ -91,5 +109,19 @@ btc_cross_crypto_daily_raw:
 btc_spot_daily_model_input_v2:
   type: kedro_datasets.pandas.ParquetDataset
   filepath: data/04_model_input/spot/daily/BTCUSDT_v2.parquet
+  save_args:
+    compression: snappy
+
+
+# -----------------------------------------------------
+# ORDER BOOK — COINGLASS 4H (BTC features)
+# Pipeline: primary.orderbook_4h
+# 19 columns: per-range imbalance/ratio/depth,
+#             cross-range gradients, rolling features,
+#             L2 raw columns from r1
+# -----------------------------------------------------
+btc_orderbook_features_4h:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/orderbook/4h/BTCUSDT.parquet
   save_args:
     compression: snappy

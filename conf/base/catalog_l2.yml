@@ -6,8 +6,25 @@
 # All datasets use .parquet.
 
 # -----------------------------------------------------
+# DERIVATIVES — COINGLASS 4H (BTC)
+# -----------------------------------------------------
+btc_coinglass_4h_clean:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/02_intermediate/derivatives/coinglass/BTCUSDT_4h.parquet
+  save_args:
+    compression: snappy
+
+# -----------------------------------------------------
 # SPOT - INTRADAY 4H
 # -----------------------------------------------------
+
+# Single-file read alias for BTC partition (used by primary.spot_4h)
+btc_spot_4h_clean:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/02_intermediate/spot/crypto/4h/BTCUSDT.parquet
+  load_args:
+    engine: pyarrow
+
 spot_crypto_4h_normalized:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/02_intermediate/spot/crypto/4h
@@ -71,6 +88,20 @@ macro_weekly_clean:
 macro_monthly_clean:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/02_intermediate/macro/monthly
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# -----------------------------------------------------
+# ORDER BOOK — COINGLASS 4H (BTC)
+# Pipeline: normalization.orderbook_4h
+# Partitions: BTCUSDT_r05 | BTCUSDT_r1 | BTCUSDT_r2
+# -----------------------------------------------------
+btc_orderbook_4h_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/orderbook/coinglass/4h
   filename_suffix: ".parquet"
   dataset:
     type: kedro_datasets.pandas.ParquetDataset

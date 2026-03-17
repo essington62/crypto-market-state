@@ -32,6 +32,7 @@ Constants:
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -44,6 +45,13 @@ import requests
 ROOT       = Path(__file__).resolve().parents[2]
 STATE_DIR  = Path(__file__).parent / "state"
 BUFFER_PKL = STATE_DIR / "ohlcv_buffer.parquet"
+TRADE_LOG  = STATE_DIR / "trade_log.csv"
+EQUITY_CSV = STATE_DIR / "equity_curve.csv"
+
+_TRADE_LOG_FIELDS = [
+    "timestamp", "date", "side", "symbol",
+    "btc_qty", "fill_price", "usdt_value", "fees_usdt", "order_id", "note",
+]
 
 BINANCE_API   = "https://api.binance.com"
 SYMBOL        = "BTCUSDT"
@@ -180,6 +188,87 @@ def _get_current_position(portfolio: dict) -> float:
     return portfolio.get("position_pct", 0.0)
 
 
+def _maybe_log_initial_position(portfolio: dict, signal: dict) -> None:
+    """
+    If the earliest trade in trade_log is a SELL with no prior BUY, prepend a
+    reconstructed initial BUY row.  Idempotent — safe to call on every run.
+
+    Reconstruction:
+        btc_qty    = first_sell.btc_qty + portfolio.btc_held
+        fill_price = (equity_curve[0].portfolio_value * FRACTION) / btc_qty
+        usdt_value = equity_curve[0].portfolio_value * FRACTION
+        timestamp  = equity_curve[0].date @ 00:00:00 UTC
+    """
+    # trade_log must exist and have content
+    if not TRADE_LOG.exists() or TRADE_LOG.stat().st_size == 0:
+        return
+
+    existing = pd.read_csv(TRADE_LOG)
+    existing["timestamp"] = pd.to_datetime(existing["timestamp"], utc=True)
+    existing = existing.sort_values("timestamp").reset_index(drop=True)
+
+    # Idempotency: skip if any BUY exists before (or at same timestamp as) the first SELL
+    sell_mask = existing["side"] == "SELL"
+    if not sell_mask.any():
+        return  # no SELL at all — nothing to prepend before
+
+    first_sell_pos = sell_mask.idxmax()  # index of first SELL in sorted order
+    if (existing.loc[:first_sell_pos - 1, "side"] == "BUY").any() if first_sell_pos > 0 else False:
+        return  # BUY already precedes the first SELL
+
+    # Need equity_curve for portfolio_value[0]
+    if not EQUITY_CSV.exists() or EQUITY_CSV.stat().st_size == 0:
+        return
+    try:
+        eq = pd.read_csv(EQUITY_CSV, parse_dates=["date"])
+    except Exception:
+        return
+    if eq.empty:
+        return
+
+    pv0       = float(eq["portfolio_value"].iloc[0])
+    init_ts   = pd.Timestamp(eq["date"].iloc[0], tz="UTC")
+
+    # Reconstruct initial BTC quantity and price
+    first_sell  = existing[existing["side"] == "SELL"].iloc[0]
+    sell_qty    = float(first_sell["btc_qty"])
+    btc_held    = portfolio.get("btc_held", 0.0)
+    btc_qty     = round(sell_qty + btc_held, 6)
+
+    if btc_qty <= 0:
+        return
+
+    usdt_value  = round(pv0 * FRACTION, 2)
+    fill_price  = round(usdt_value / btc_qty, 2)
+
+    buy_row = {
+        "timestamp":  init_ts.isoformat(),
+        "date":       init_ts.strftime("%Y-%m-%d"),
+        "side":       "BUY",
+        "symbol":     "BTCUSDT",
+        "btc_qty":    btc_qty,
+        "fill_price": fill_price,
+        "usdt_value": usdt_value,
+        "fees_usdt":  0.0,
+        "order_id":   "",
+        "note":       "INITIAL_POSITION (reconstructed)",
+    }
+    new_row = pd.DataFrame([buy_row])
+    new_row["timestamp"] = pd.to_datetime(new_row["timestamp"], utc=True)
+
+    combined = pd.concat([existing, new_row], ignore_index=True)
+    combined  = combined.sort_values("timestamp").reset_index(drop=True)
+
+    # Serialize timestamps back to ISO-8601 with UTC offset
+    combined["timestamp"] = combined["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    combined[_TRADE_LOG_FIELDS].to_csv(TRADE_LOG, index=False)
+
+    print(f"[PaperTrader] Injected INITIAL_POSITION BUY: "
+          f"{btc_qty:.6f} BTC @ ${fill_price:,.2f}  (usdt_value=${usdt_value:,.2f})")
+
+
 # ---------------------------------------------------------------------------
 # Daily report
 # ---------------------------------------------------------------------------
@@ -285,7 +374,7 @@ def run_daily(status_only: bool = False, init_mode: bool = False) -> None:
         return
 
     # 4. Generate signal
-    signal = gen.predict(last_row, signal_date=date_str)
+    signal = gen.predict(last_row, signal_date=date_str, context_df=buf_feat)
     print(f"[PaperTrader] Signal: {signal['regime']}  p_bull={signal['p_bull']:.3f}")
 
     # 5. Get current portfolio
@@ -293,6 +382,10 @@ def run_daily(status_only: bool = False, init_mode: bool = False) -> None:
     current_pos  = _get_current_position(portfolio)
     target_pos   = _target_position(signal["regime"])
     delta        = abs(target_pos - current_pos)
+
+    # Log initial BUY if never recorded
+    if not status_only:
+        _maybe_log_initial_position(portfolio, signal)
 
     traded = False
 
@@ -400,7 +493,7 @@ def run_init() -> None:
     buf_f  = _compute_r11_features(buffer)
     last   = buf_f.dropna(subset=["log_return", "vol_short", "vol_ratio",
                                    "drawdown", "volume_z", "slope_21d"]).iloc[-1]
-    signal = gen.predict(last, signal_date=str(last.name.date()))
+    signal = gen.predict(last, signal_date=str(last.name.date()), context_df=buf_f)
     print(f"[init] Current signal: {signal['regime']}  p_bull={signal['p_bull']:.3f}")
 
     executor  = OrderExecutor()

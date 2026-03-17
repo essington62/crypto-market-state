@@ -270,6 +270,13 @@ coinglass_derivatives_1h_updated:
       compression: snappy
 
 
+# BTC CoinGlass 4h derivatives — single-file read alias for L2 pipeline
+btc_coinglass_raw_4h:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/01_raw/derivatives/coinglass/4h/BTCUSDT.parquet
+  load_args:
+    engine: pyarrow
+
 # Production 4h derivatives pipeline output
 coinglass_derivatives_4h_updated:
   type: kedro_datasets.partitions.PartitionedDataset
@@ -299,6 +306,36 @@ coinglass_oi_1h_test_raw:
 coinglass_oi_1h_test_updated:
   type: kedro_datasets.partitions.PartitionedDataset
   path: data/01_raw/derivatives/coinglass/1h_test
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+
+# -----------------------------------------------------
+# COINGLASS — ORDER BOOK DEPTH (4H)
+# Pipeline: ingestion.coinglass.orderbook_4h
+# Partitions: {asset}_r05 | {asset}_r1 | {asset}_r2
+# -----------------------------------------------------
+
+# Read alias — input to the incremental node (existing partitions).
+# Separate entry avoids a DAG self-loop with btc_orderbook_raw_4h_updated.
+btc_orderbook_raw_4h:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/orderbook/coinglass/4h
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+  load_args:
+    ignore_missing: true
+
+# Write alias — node output; points to the same physical path as above.
+btc_orderbook_raw_4h_updated:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/orderbook/coinglass/4h
   filename_suffix: ".parquet"
   dataset:
     type: kedro_datasets.pandas.ParquetDataset

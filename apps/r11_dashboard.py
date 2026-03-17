@@ -213,20 +213,26 @@ def section_kpis(equity: pd.DataFrame, position: dict) -> None:
         regime     = str(last.get("regime", "n/a"))
         p_bull     = float(last.get("p_bull", float("nan")))
         pos_pct    = float(last.get("position_pct", float("nan")))
-        pv         = float(last.get("portfolio_value", float("nan")))
-        dret       = float(last.get("daily_ret", float("nan")))
+        pv_last    = float(last.get("portfolio_value", float("nan")))
         metrics    = _compute_metrics(equity)
         sharpe     = metrics["sharpe"] if metrics["n"] >= 20 else float("nan")
         maxdd      = metrics["maxdd"]
         cur_dd     = metrics.get("cur_dd", float("nan"))
+        # Compute returns from portfolio_value series
+        pv_series = equity["portfolio_value"].dropna()
+        if len(pv_series) >= 2:
+            daily_return = float(pv_series.iloc[-1] / pv_series.iloc[-2] - 1)
+            total_return = float(pv_series.iloc[-1] / pv_series.iloc[0] - 1)
+        else:
+            daily_return = None   # single row: show "--"
+            total_return = None
     else:
-        regime = p_bull = pos_pct = pv = dret = float("nan")
-        sharpe = maxdd = cur_dd = float("nan")
         regime = "n/a"
+        p_bull = pos_pct = pv_last = float("nan")
+        sharpe = maxdd = cur_dd = float("nan")
+        daily_return = total_return = None
 
-    regime_delta = "🟢 Bull" if regime == "Bull" else "🔴 Bear" if regime == "Bear" else "—"
-
-    cols = st.columns(7)
+    cols = st.columns(8)
     with cols[0]:
         st.metric("Regime", regime,
                   delta=None,
@@ -243,16 +249,22 @@ def section_kpis(equity: pd.DataFrame, position: dict) -> None:
         st.metric("Position", f"{pos_pct*100:.0f}%" if not np.isnan(pos_pct) else "n/a")
 
     with cols[3]:
-        st.metric("Portfolio", f"${pv:,.0f}" if not np.isnan(pv) else "n/a")
+        st.metric("Portfolio", f"${pv_last:,.0f}" if not np.isnan(pv_last) else "n/a")
 
     with cols[4]:
-        dret_str   = f"{dret*100:+.2f}%" if not np.isnan(dret) else "n/a"
-        dret_delta = f"{dret*100:+.2f}%" if not np.isnan(dret) else None
+        dret_str   = f"{daily_return*100:+.2f}%" if daily_return is not None else "--"
+        dret_delta = dret_str if daily_return is not None else None
         st.metric("Daily Return", dret_str,
                   delta=dret_delta,
                   delta_color="normal")
 
     with cols[5]:
+        tot_str = f"{total_return*100:+.2f}%" if total_return is not None else "--"
+        st.metric("Total Return", tot_str,
+                  delta=tot_str if total_return is not None else None,
+                  delta_color="normal")
+
+    with cols[6]:
         if np.isnan(sharpe):
             st.metric("Live Sharpe", "n/a", delta="need 20d")
         else:
@@ -260,7 +272,7 @@ def section_kpis(equity: pd.DataFrame, position: dict) -> None:
                       delta=f"{sharpe - 0.775:+.3f} vs bt",
                       delta_color="normal")
 
-    with cols[6]:
+    with cols[7]:
         if np.isnan(maxdd):
             st.metric("Live MaxDD", "n/a")
         else:
@@ -438,7 +450,7 @@ def section_trades(trades: pd.DataFrame) -> None:
 # Section 5 — Portfolio Performance
 # ══════════════════════════════════════════════════════════════════════════
 
-def section_equity(equity: pd.DataFrame) -> None:
+def section_equity(equity: pd.DataFrame, trades: pd.DataFrame) -> None:
     st.subheader("⑤ Portfolio Performance")
     try:
         if equity.empty:
@@ -472,6 +484,50 @@ def section_equity(equity: pd.DataFrame) -> None:
             yaxis="y2",
             hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}%<extra>7d Ret</extra>",
         ))
+
+        # Trade markers: BUY / SELL overlaid on equity curve
+        if not trades.empty:
+            eq_lookup = {d.date(): (d, float(v)) for d, v in zip(pv.index, pv.values)}
+            eq_dates_sorted = sorted(eq_lookup.keys())
+
+            for side, color, sym_marker in [("BUY",  BULL_CLR, "triangle-up"),
+                                             ("SELL", BEAR_CLR, "triangle-down")]:
+                t_side = trades[trades["side"] == side]
+                if t_side.empty:
+                    continue
+
+                x_vals, y_vals, hover = [], [], []
+                for _, tr in t_side.iterrows():
+                    td = pd.to_datetime(tr["timestamp"], utc=True).date()
+                    if td in eq_lookup:
+                        x_val, y_val = eq_lookup[td]
+                    elif eq_dates_sorted:
+                        nearest = min(eq_dates_sorted, key=lambda d: abs((d - td).days))
+                        x_val, y_val = eq_lookup[nearest]
+                    else:
+                        continue
+                    x_vals.append(x_val)
+                    y_vals.append(y_val)
+                    price = float(tr.get("fill_price") or 0)
+                    qty   = float(tr.get("btc_qty") or 0)
+                    note  = str(tr.get("note") or "")
+                    hover.append(
+                        f"{str(tr['timestamp'])[:10]}<br>"
+                        f"Price: ${price:,.2f}<br>"
+                        f"Qty: {qty:.6f} BTC<br>"
+                        f"Note: {note}"
+                    )
+
+                if x_vals:
+                    fig.add_trace(go.Scatter(
+                        x=x_vals, y=y_vals,
+                        mode="markers",
+                        name=side,
+                        marker=dict(symbol=sym_marker, size=14, color=color,
+                                    line=dict(width=1, color="white")),
+                        hovertext=hover,
+                        hoverinfo="text",
+                    ))
 
         fig.add_annotation(
             x=pv.index[-1], y=end,
@@ -686,7 +742,7 @@ def main() -> None:
     section_trades(trades)
     st.divider()
 
-    section_equity(equity)
+    section_equity(equity, trades)
     st.divider()
 
     section_drawdown(equity)

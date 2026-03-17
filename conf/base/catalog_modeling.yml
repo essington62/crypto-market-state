@@ -1,0 +1,26 @@
+# =====================================================
+# =================== MODELING ========================
+# =====================================================
+# Model artifacts (pickled), metrics reports, and
+# inference inputs produced by modeling pipelines.
+
+# -----------------------------------------------------
+# ENTRY MODEL 4H — Walk-Forward Evaluation
+# Pipeline: modeling.entry_4h
+# -----------------------------------------------------
+
+# Walk-forward metrics: one row per (feature_set × split)
+btc_entry_model_metrics:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/06_reports/entry_4h/metrics.parquet
+  save_args:
+    compression: snappy
+
+# Fitted LightGBM models: one file per (feature_set × split)
+# Key format: {SET_NAME}_split_{n}.pkl  (e.g. SET_D_split_1.pkl)
+btc_entry_model_artifacts:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/05_models/entry_4h
+  filename_suffix: ".pkl"
+  dataset:
+    type: kedro_datasets.pickle.PickleDataset
