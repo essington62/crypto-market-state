@@ -222,6 +222,62 @@ def join_orderbook(
 
 # ── Node 4 ────────────────────────────────────────────────────────────────────
 
+def join_coinglass_indices(
+    features: pd.DataFrame,
+    indices: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Forward-fill daily CoinGlass index features onto the 4h timestamp grid.
+
+    Same anti-lookahead pattern as join_regime_context:
+    index values computed on day D are visible only from D+1 00:00 UTC onward.
+
+    Parameters
+    ----------
+    features : pd.DataFrame
+        Output of join_orderbook (DatetimeIndex UTC, 4h).
+    indices : pd.DataFrame
+        btc_coinglass_indices_features (DatetimeIndex UTC, daily).
+
+    Returns
+    -------
+    pd.DataFrame
+        4h DataFrame with CoinGlass index feature columns appended.
+        Sorted ascending.  NaN permitted at start (burn-in where index
+        history is shorter than spot, or D+1 lag leaves first candle empty).
+    """
+    # Ensure UTC awareness
+    if indices.index.tz is None:
+        indices = indices.copy()
+        indices.index = indices.index.tz_localize("UTC")
+
+    # ── Step 1: shift by 1 day (strict anti-lookahead) ───────────────────────
+    indices_lagged = indices.copy()
+    indices_lagged.index = indices_lagged.index + pd.Timedelta(days=1)
+
+    # ── Step 2: build combined grid and forward-fill ─────────────────────────
+    combined_idx    = features.index.union(indices_lagged.index).sort_values()
+    indices_on_grid = indices_lagged.reindex(combined_idx).ffill()
+
+    # ── Step 3: project back to 4h grid ──────────────────────────────────────
+    indices_4h = indices_on_grid.reindex(features.index)
+
+    # ── Step 4: left join ────────────────────────────────────────────────────
+    result = features.join(indices_4h, how="left").sort_index(ascending=True)
+
+    first_col   = indices.columns[0]
+    n_filled    = result[first_col].notna().sum()
+    n_burnin    = len(result) - n_filled
+    print(
+        f"[model_features_4h] CoinGlass indices joined — {len(result)} rows, "
+        f"{result.shape[1]} columns total, "
+        f"{n_filled} rows with index data ({n_burnin} NaN burn-in)."
+    )
+    return result
+
+
+# ── Node 5 ────────────────────────────────────────────────────────────────────
+
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
     """
     Add the supervised learning target column.

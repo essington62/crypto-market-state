@@ -238,6 +238,18 @@ coinglass_ahr999_raw:
   save_args:
     compression: snappy
 
+# CoinGlass daily indices (fear_greed, ahr999, puell_multiple, bubble_index,
+# stablecoin_mcap, cdri_index, cgdi_index)
+# Pipeline: normalization.coinglass_indices → primary.coinglass_indices
+coinglass_indices_raw:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/01_raw/derivatives/coinglass/indices
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
 # BTC Long/Short Top Positions ratio (Coinglass)
 # Used as feature input to primary.spot.crypto (top_position_ratio)
 btc_top_position_longshort_l1:

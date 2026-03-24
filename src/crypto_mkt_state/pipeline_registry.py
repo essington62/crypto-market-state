@@ -21,10 +21,14 @@ from crypto_mkt_state.pipelines.ingestion.fred.pipeline import (
 from crypto_mkt_state.pipelines.ingestion.fred.fred_incremental.pipeline import (
     create_pipeline as ingestion_fred_incremental_pipeline,
 )
-from crypto_mkt_state.pipelines.ingestion.yfinance.pipeline import (
-    create_pipeline_indices as ingestion_yfinance_indices_pipeline,
-    create_pipeline_assets as ingestion_yfinance_assets_pipeline,
-)
+
+# REMOVED: old yfinance pipelines (indices and assets)
+# from crypto_mkt_state.pipelines.ingestion.yfinance.pipeline import (
+#     create_pipeline_indices as ingestion_yfinance_indices_pipeline,
+#     create_pipeline_assets as ingestion_yfinance_assets_pipeline,
+# )
+
+# KEPT: only the incremental yfinance pipeline
 from crypto_mkt_state.pipelines.ingestion.yfinance.yfinance_incremental.pipeline import (
     create_pipeline as ingestion_yfinance_incremental_pipeline,
 )
@@ -72,6 +76,10 @@ from crypto_mkt_state.pipelines.normalization.orderbook_4h.pipeline import (
     create_pipeline as normalization_orderbook_4h_pipeline,
 )
 
+from crypto_mkt_state.pipelines.normalization.coinglass_indices.pipeline import (
+    create_pipeline as normalization_coinglass_indices_pipeline,
+)
+
 # ==================== L3 ====================
 
 from crypto_mkt_state.pipelines.primary.derivatives_4h.pipeline import (
@@ -100,6 +108,10 @@ from crypto_mkt_state.pipelines.primary.spot_business_day.pipeline import (
 
 from crypto_mkt_state.pipelines.primary.spot_crypto.pipeline import (
     create_pipeline as primary_spot_crypto_pipeline,
+)
+
+from crypto_mkt_state.pipelines.primary.coinglass_indices.pipeline import (
+    create_pipeline as primary_coinglass_indices_pipeline,
 )
 
 # ==================== MODELING ====================
@@ -133,10 +145,11 @@ def register_pipelines() -> dict[str, Pipeline]:
 
     pipelines["ingestion.fred.incremental"] = ingestion_fred_incremental_pipeline()
 
-    pipelines["ingestion.yfinance.indices"] = ingestion_yfinance_indices_pipeline()
+    # REMOVED: old yfinance pipelines
+    # pipelines["ingestion.yfinance.indices"] = ingestion_yfinance_indices_pipeline()
+    # pipelines["ingestion.yfinance.assets"] = ingestion_yfinance_assets_pipeline()
 
-    pipelines["ingestion.yfinance.assets"] = ingestion_yfinance_assets_pipeline()
-
+    # KEPT: only the incremental yfinance pipeline
     pipelines["ingestion.yfinance.incremental"] = ingestion_yfinance_incremental_pipeline()
 
     pipelines["ingestion.coinglass.derivatives_4h"] = (
@@ -153,6 +166,8 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["normalization.derivatives_4h"] = normalization_derivatives_4h_pipeline()
 
     pipelines["normalization.orderbook_4h"] = normalization_orderbook_4h_pipeline()
+
+    pipelines["normalization.coinglass_indices"] = normalization_coinglass_indices_pipeline()
 
     pipelines["normalization.spot_intraday_4h"] = normalization_spot_intraday_4h_pipeline()
 
@@ -183,6 +198,8 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["primary.spot_business_day"] = primary_spot_business_day_pipeline()
 
     pipelines["primary.spot.crypto"] = primary_spot_crypto_pipeline()
+
+    pipelines["primary.coinglass_indices"] = primary_coinglass_indices_pipeline()
 
     # ==================== MODELING ====================
 

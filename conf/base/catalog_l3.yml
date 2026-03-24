@@ -114,6 +114,18 @@ btc_spot_daily_model_input_v2:
 
 
 # -----------------------------------------------------
+# COINGLASS DAILY INDICES — features (consolidated daily)
+# Pipeline: primary.coinglass_indices
+# Columns: {name}_zscore_30d, {name}_change_7d, {name}_ma_ratio
+#          for each of the 7 configured indices (21 columns total)
+# -----------------------------------------------------
+btc_coinglass_indices_features:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/03_primary/derivatives/coinglass/indices/BTCUSDT_daily.parquet
+  save_args:
+    compression: snappy
+
+# -----------------------------------------------------
 # ORDER BOOK — COINGLASS 4H (BTC features)
 # Pipeline: primary.orderbook_4h
 # 19 columns: per-range imbalance/ratio/depth,

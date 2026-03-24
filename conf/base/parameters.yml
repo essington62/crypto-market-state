@@ -3,7 +3,7 @@
 # =====================================================
 
 global:
-  start_date: "2023-01-01"
+  start_date: "2020-10-01"   # default para daily/weekly/monthly (yfinance + FRED)
   interval: "1d"
   timezone: "UTC"
 
@@ -85,7 +85,9 @@ binance_intraday:
     - LINKUSDT
     - XRPUSDT
 
-  start_date: "2024-01-01"
+  # 4h data: mantém janela móvel ≈ 6 meses (alinhado com CoinGlass Hobbyist).
+  # Início real do acúmulo via cron. NÃO reprocessar sem backup.
+  start_date: "2025-09-22"
 
 
 # =====================================================
@@ -94,6 +96,11 @@ binance_intraday:
 
 fred:
   source: "fred"
+
+  # start_date explícito — independente do global.
+  # Séries FRED diárias/semanais/mensais desde 2020-10-01.
+  # Obs: WALCL começa 2020-10-07 (dado genuinamente ausente antes disso).
+  start_date: "2020-10-01"
 
   calendar:
     type: "business_days"
@@ -154,6 +161,10 @@ fred:
 yfinance:
   source: "yfinance"
 
+  # start_date explícito — independente do global.
+  # Todos os tickers diários (business_day) devem ter histórico desde 2020-10-01.
+  start_date: "2020-10-01"
+
   calendar:
     type: "business_days"
     timezone: "UTC"
@@ -182,6 +193,47 @@ yfinance:
     - ticker: "GC=F"
       name: gold
       category: commodity
+
+    # Commodities / Geopolitical
+    - ticker: "CL=F"
+      name: oil_wti
+      category: commodity
+
+    - ticker: "BZ=F"
+      name: oil_brent
+      category: commodity
+
+    - ticker: "NG=F"
+      name: natural_gas
+      category: commodity
+
+    # Fear indicators
+    - ticker: "^MOVE"
+      name: move_index
+      category: volatility
+
+    - ticker: "^OVX"  # CORRIGIDO: ^OVX em vez de OVX
+      name: oil_volatility
+      category: volatility
+
+    # Defense / Geopolitical proxy
+    - ticker: "ITA"
+      name: defense_etf
+      category: geopolitical
+
+    # Credit stress
+    - ticker: "HYG"
+      name: high_yield_bonds
+      category: credit
+
+    - ticker: "LQD"
+      name: investment_grade_bonds
+      category: credit
+
+    # Inflation / Breakeven
+    - ticker: "TIP"
+      name: tips_etf
+      category: inflation
 
 
 # =====================================================
@@ -366,7 +418,10 @@ coinglass_intraday:
 
   interval: "4h"
 
-  start_date: "2024-01-01"
+  # Início real do acúmulo via cron diário (2025-09-24).
+  # CoinGlass Hobbyist retorna apenas os últimos 6 meses.
+  # NUNCA reprocessar full sem backup — o histórico acumulado seria perdido.
+  start_date: "2025-09-24"
 
   # Pair-level symbols (used for endpoints that require exchange + BTCUSDT format)
   assets:
@@ -389,6 +444,9 @@ coinglass_intraday:
 # =====================================================
 
 ingestion.coinglass.orderbook_4h:
+  # Início real do acúmulo via cron: 2025-10-05.
+  # Pipeline é sempre incremental — sem start_date fixo.
+  # NUNCA reprocessar full sem backup.
   exchange: "Binance"
   interval: "4h"
   limit: 1000
@@ -540,3 +598,38 @@ modeling.entry_4h:
     n_jobs: -1
     early_stopping_rounds: 100
     verbose: -1
+
+
+# =====================================================
+# ============= COINGLASS DAILY INDICES ===============
+# =====================================================
+# L2: normalization.coinglass_indices
+# L3: primary.coinglass_indices
+# L5: join_coinglass_indices (forward-fill D+1 onto 4h grid)
+
+coinglass_indices:
+  zscore_window: 30
+  change_window: 7
+  ma_window: 30
+
+  indices:
+    - name: fear_greed
+      value_col: fear_greed
+
+    - name: ahr999
+      value_col: ahr999
+
+    - name: puell_multiple
+      value_col: puell_multiple
+
+    - name: bubble_index
+      value_col: bubble_index
+
+    - name: stablecoin_mcap
+      value_col: stablecoin_mcap_usd
+
+    - name: cdri_index
+      value_col: cdri_index
+
+    - name: cgdi_index
+      value_col: cgdi_index

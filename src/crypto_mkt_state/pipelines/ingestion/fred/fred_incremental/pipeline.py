@@ -1,12 +1,7 @@
 """
-Kedro pipeline for incremental FRED macro daily ingestion (L1).
+L1 FRED Incremental Ingestion pipeline.
 
-Reads existing L1 PartitionedDataset (macro_daily_raw), fetches missing
-observations from FRED, and writes updated partitions to
-macro_daily_incremental.
-
-Run example:
-    kedro run --pipeline ingestion.fred.incremental
+Incrementally updates FRED series data from FRED API.
 """
 
 from kedro.pipeline import Pipeline, node
@@ -22,12 +17,11 @@ def create_pipeline() -> Pipeline:
                 func=update_fred_incremental,
                 inputs={
                     "macro_daily_raw": "macro_daily_raw",
-                    "fred_series": "params:fred.series",
+                    "params_fred": "params:fred",  # CORRETO: passa o dicionário completo
                     "global_start_date": "params:global.start_date",
                 },
                 outputs="macro_daily_incremental",
                 name="update_fred_incremental",
-            ),
+            )
         ]
     )
-

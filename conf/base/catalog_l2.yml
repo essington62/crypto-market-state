@@ -95,6 +95,19 @@ macro_monthly_clean:
       compression: snappy
 
 # -----------------------------------------------------
+# COINGLASS DAILY INDICES (schema-validated)
+# Pipeline: normalization.coinglass_indices
+# -----------------------------------------------------
+coinglass_indices_clean:
+  type: kedro_datasets.partitions.PartitionedDataset
+  path: data/02_intermediate/derivatives/coinglass/indices
+  filename_suffix: ".parquet"
+  dataset:
+    type: kedro_datasets.pandas.ParquetDataset
+    save_args:
+      compression: snappy
+
+# -----------------------------------------------------
 # ORDER BOOK — COINGLASS 4H (BTC)
 # Pipeline: normalization.orderbook_4h
 # Partitions: BTCUSDT_r05 | BTCUSDT_r1 | BTCUSDT_r2

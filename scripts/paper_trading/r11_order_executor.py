@@ -47,7 +47,7 @@ def _load_credentials() -> tuple[str, str]:
         )
     with open(CREDS_FILE) as fh:
         creds = yaml.safe_load(fh)
-    cfg = creds["api_keys"]["binance_testnet"]
+    cfg = creds["binance_testnet"]
     return str(cfg["api_key"]), str(cfg["api_secret"])
 
 

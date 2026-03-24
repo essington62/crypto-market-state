@@ -70,7 +70,7 @@ All data flows strictly downward through layers. **No layer may read from or wri
 
 - **Binance** (`ingestion.binance.spot`): Crypto spot OHLCV (BTC, ETH, BNB, SOL, ADA, AVAX, LINK, XRP) — 24/7 continuous calendar
 - **Binance 4h** (`ingestion.binance.spot_4h`): BTC spot OHLCV at 4h interval — 24/7 continuous calendar
-- **Yahoo Finance** (`ingestion.yfinance.*`): VIX, DXY, SP500, NASDAQ, Gold — business day calendar
+- **Yahoo Finance** (`ingestion.yfinance.*`): VIX, DXY, SP500, NASDAQ, Gold, Oil WTI, Oil Brent, Natural Gas, MOVE Index, OVX, Defense ETF (ITA), HYG, LQD, TIP — business day calendar
 - **FRED** (`ingestion.fred`): FEDFUNDS, DGS2, DGS10, CPI, UNRATE, WALCL, INDPRO, PAYEMS, STLFSI4, RRPONTSYD, TEDRATE — business day calendar
 - **CoinGlass** (`ingestion.coinglass.derivatives_4h`): BTC derivatives 4h — open interest, funding rates (OI-weighted, vol-weighted). Column format: `{endpoint_name}__{canonical_field_name}` (double underscore — L1 contract, never change)
 - **CoinGlass Order Book** (`ingestion.coinglass.orderbook_4h`): BTC futures order book bid/ask volumes at 4h interval. 3 depth ranges: 0.5%, 1%, 2% of price. Partitioned by range: BTCUSDT_r05, BTCUSDT_r1, BTCUSDT_r2. ~166 days of history (API limit: 1000 records per range). No start_time/end_time params supported — single request only.
@@ -249,6 +249,322 @@ After creating any module: update `pipeline_registry.py`, add datasets to the ap
 - `src/crypto_mkt_state/clients/` — API clients for Binance, YFinance, and FRED
 
 L2 nodes must **not** call `utils_temporal` — temporal handling belongs to L1 only.
+
+## Validated Feature Decisions (from analysis)
+
+Sources: `scripts/analysis/fed_macro_correlation.py`, `scripts/analysis/regime_deep_analysis.py`
+
+### Macro correlation analysis findings
+
+#### What predicts BTC 5d forward return
+
+SIGNIFICANT (p < 0.10):
+
+| Feature | Corr | Lag |
+|---|---|---|
+| `cpi_vs_target` | +0.120 | 0d |
+| `rate_expectation_ch30` | +0.108 | 0d |
+| `yield_curve_2y10y` | −0.117 | 4d |
+
+NOT SIGNIFICANT — exclude:
+
+| Feature | Reason |
+|---|---|
+| `vix_zscore_30d` | p=0.99 — not predictive |
+| `dxy_return_5d` | p=0.46 — not predictive |
+| `sp500_return_5d` | p=0.65 — not predictive |
+| `dgs2_change_1d` | Unstable — 39 sign flips across periods |
+
+#### What moves WITH BTC (regime context)
+
+SP500 and VIX are contemporaneous, not predictive.
+Use as regime state features, not directional signals.
+
+#### Structural break — post-ETF (Jan 2024)
+
+Pre-ETF correlations (DXY, DGS2) largely disappeared post-2024-01-10.
+BTC behaves more like "digital gold" post-ETF.
+**Train only on 2023+ data** — pre-2023 patterns are obsolete.
+
+---
+
+### Macro regime features for HMM v2
+
+#### Predictive macro (enter as HMM features)
+
+```python
+cpi_vs_target         = CPIAUCSL.pct_change(12) * 100 - 2.0
+rate_expectation_ch30 = (DGS3MO - FEDFUNDS).diff(30)
+yield_curve_2y10y     = DGS10 - DGS2
+```
+
+#### Regime context (use as state proxy — not raw)
+
+```python
+# SP500 regime (trend state)
+spx_trend  = SP500.pct_change(21)
+spx_regime = np.where(spx_trend > 0.02,  1,
+             np.where(spx_trend < -0.02, -1, 0))
+# 1=bull, 0=sideways, -1=bear
+
+# VIX regime (stress state)
+vix_trend = VIX / VIX.shift(5) - 1
+# rising VIX = stress increasing
+# falling VIX = stress decreasing
+
+features_context = ['spx_regime', 'vix_trend']
+# Removes noise, preserves latent market state
+```
+
+#### Discarded features — do not retest without new evidence
+
+| Feature | Reason |
+|---|---|
+| `dgs2_change_1d` | 39 sign flips, highly unstable |
+| `dxy_return_5d` | Correlation disappeared post-ETF |
+| `vix_zscore_30d` | Contemporaneous only, not predictive |
+| `sp500_return_5d` | Contemporaneous only, not predictive |
+| `days_to_fomc` | FOMC calendar does not increase vol (p=0.22) |
+| `liquidity_proxy` | Redundant with `vol_ratio` (corr=0.72) |
+
+---
+
+### Liquidity analysis findings
+
+Source: `scripts/analysis/liquidity_analysis.py`
+
+`walcl_zscore_52w` is the strongest macro signal found (corr=−0.39, p≈0) — stronger than all previously tested macro variables.
+
+**Key insight — 72-day lag:** Fed balance sheet changes take ~3 months to affect BTC price. Market partially anticipates but 72 trading days is the statistically optimal lag.
+
+**Counter-intuitive finding:** DROUGHT regime outperforms FLOOD (+5.74% vs +1.64%, p=0.0006). BTC anticipates policy reversal during tightening periods. Use as lagged feature, not contemporaneous.
+
+**Sign instability:** Raw signal flipped post-2022. Solution: `walcl_zscore_52w.shift(72)` stabilises the signal across periods.
+
+| Signal | Corr (21d) | Best lag | Stable |
+|---|---|---|---|
+| `walcl_zscore_52w` | −0.39 | 72d | No (use lagged) |
+| `walcl_change_12w` | −0.10 | 60d | No |
+| `liquidity_score`  | −0.11 | 27d | No |
+
+**Include in HMM v2:**
+```python
+walcl_zscore_52w_lag72 = walcl_zscore_52w.shift(72)
+```
+
+---
+
+### Positioning analysis findings
+
+Source: `scripts/analysis/positioning_analysis.py`
+
+Window: 2025-09-13 → 2026-03-12 (~180 days, 1080 × 4h bars). CoinGlass Hobbyist plan only.
+
+**INCLUDE:** `funding_zscore_14d` — corr=-0.135 (5d), best_lag=14d, regime separation=+0.44 (Bull mean=+0.42 vs Bear mean=-0.08), stable across window. Extreme LONG events (z≥+2) produce avg -2.45% BTC over 5d (contrarian signal confirmed).
+
+**EXCLUDE:** All raw OI pct_change signals (corr<0.1 with raw transform — superseded by OI deep analysis below), leverage_stress (p=0.159), funding_zscore_30d, funding_divergence.
+
+**CoinGlass upgrade:** WAIT — positioning script best corr=0.135 < 0.15. See OI analysis below for updated upgrade recommendation.
+
+| Signal | Corr (5d) | Best lag | Separation | Verdict |
+|---|---|---|---|---|
+| `funding_zscore_14d` | −0.135 | 14d | +0.44 | **INCLUDE** |
+| `oi_change_3d` (raw) | −0.056 | 25d | +0.79 | EXCLUDE (raw — use normalized) |
+| `leverage_stress`    | −0.109 | 26d | +0.25 | EXCLUDE (p=0.159) |
+| `liquidation_*`      | N/A    | N/A | N/A   | NOT AVAILABLE (Hobbyist plan) |
+
+---
+
+### OI deep analysis findings
+
+Source: `scripts/analysis/oi_analysis.py`
+
+**Critical insight:** Raw OI pct_change (tested in positioning_analysis.py) was the wrong transform. Normalized/stationary OI transforms dramatically outperform raw changes.
+
+**Best signals (criteria: |corr_5d| ≥ 0.10 AND separation ≥ 0.30):**
+
+| Signal | Corr (5d) | Best lag | Separation | Note |
+|---|---|---|---|---|
+| `oi_zscore_30d`    | −0.291 | 10d | 2.12 | Strongest OI signal |
+| `oi_price_ratio_z` | −0.272 | 1d  | 0.34 | Removes price trend bias |
+| `oi_change_7d`     | −0.269 | 21d | 1.39 | Weekly momentum |
+| `oi_zscore_14d`    | −0.243 | 21d | 1.74 | Short z-score |
+| `oi_vol_ratio`     | −0.217 | 19d | 1.19 | OI volatility analog |
+| `oi_extreme`       | −0.220 | 20d | 1.69 | Discrete HMM signal |
+| `oi_change_3d`     | −0.113 | 6d  | 0.97 | Borderline (corr≥0.10) |
+
+**Reversal detection:** `oi_vol_ratio` is elevated before regime flips (At_flip=0.55 vs Stable=0.41, p=0.040) — confirmed leading indicator of regime transitions.
+
+**Price×OI divergence (corrected sign):**
+- `price_oi_div` > Q75 (price↑ OI↓ = short covering): avg BTC 5d = −0.42%
+- `price_oi_div` < Q25 (price↑ OI↑ = fragile longs): avg BTC 5d = −2.23%
+- Signal directionally correct but separation below threshold (sep=0.26) — EXCLUDE for now.
+
+**Note on `funding_zscore_14d`:** In OI analysis (regime via 21d momentum) sep=0.21 < 0.30 — EXCLUDE. In positioning_analysis (regime via R11 HMM) sep=0.44 — INCLUDE. The R11 regime context is the right conditioning variable. Keep `funding_zscore_14d` in the feature set, conditioned on R11 regime.
+
+**CoinGlass upgrade:** CONSIDER — best corr=0.291 > 0.15 threshold. Evaluate Standard plan ROI. Liquidation data could add `liq_cascade_risk` feature. Organic data hits 12 months ≈2026-09.
+
+**Recommended OI signals to add to HMM v2:**
+```python
+oi_zscore_30d    # corr=-0.291, lag=10d — normalize to remove trend
+oi_price_ratio_z # corr=-0.272, lag=1d  — price-adjusted OI
+oi_vol_ratio     # corr=-0.217, lag=19d — leading indicator of reversals
+```
+
+---
+
+### Final HMM v2 feature set
+
+```python
+# BTC technical (6 — validated in R11)
+log_return, vol_short, vol_ratio,
+drawdown, volume_z, slope_21d
+
+# Macro predictive (4 — validated in analysis)
+cpi_vs_target           # corr=+0.120, lag=0d
+rate_expectation_ch30   # corr=+0.108, lag=0d
+yield_curve_2y10y       # corr=-0.117, lag=4d
+walcl_zscore_52w_lag72  # corr=-0.390, lag=72d  ← strongest signal
+
+# Macro regime context (2 — contemporaneous, not predictive)
+spx_regime   # SP500.pct_change(21) → -1/0/1
+vix_trend    # VIX / VIX.shift(5) - 1
+
+# Positioning (1 — validated)
+funding_zscore_14d      # corr=-0.135, lag=14d  (contrarian at extremes)
+
+# OI (3 — validated in oi_analysis.py)
+oi_zscore_30d    # corr=-0.291, lag=10d  ← strongest OI signal
+oi_price_ratio_z # corr=-0.272, lag=1d   (price-trend adjusted)
+oi_vol_ratio     # corr=-0.217, lag=19d  (reversal leading indicator)
+```
+
+**Total: 16 features confirmed**
+
+Discarded: raw OI pct_change (wrong transform), `leverage_stress` (p>0.15), `price_oi_div` (sep<0.30), `oi_exchange_div` (sep<0.30), `liquidation_intensity` (Hobbyist plan — not available).
+
+---
+
+## Model Architecture — v3 (Current)
+
+### Overview
+
+HMM is no longer the final decision model. It acts as a **feature generator** (unsupervised regime signal). The final decision is made by a supervised **LightGBM/XGBoost integrator**.
+
+```
+BTC features → HMM (R5C) → regime features
++ Macro (FRED) + ETF flows + CoinGlass + Order Book
+→ LightGBM (regime integrator)
+→ position sizing
+```
+
+Key concept: **Regime detection is now supervised via integration, not pure HMM.**
+
+---
+
+### HMM Final Design — R5C (best unsupervised detector)
+
+- `n_states`: 3 (Bull / Sideways / Bear)
+- `covariance_type`: full
+- Features: 6 stationary BTC features (`log_return`, `vol_short`, `vol_ratio`, `drawdown`, `volume_z`, `slope_21d`)
+- Allocation rule: `max(0, prob_bull − prob_bear)` (continuous, not binary)
+
+| Metric | Value |
+|---|---|
+| Bull mean return | +0.87% |
+| Sharpe | +0.639 |
+| Splits passing | 3/4 |
+
+**Conclusion:** R5C is the best unsupervised regime detector found, but insufficient alone → used as feature input to LightGBM.
+
+---
+
+### LightGBM Regime Integrator
+
+- **Target:** `btc_ret_5d > 0` (binary direction)
+- **Position sizing:** `position = prob_bull × 0.75`, with entropy gate
+- **Input:** R5C regime features + Macro + ETF + CoinGlass + Order Book
+
+| Metric | Value |
+|---|---|
+| Mean Sharpe | 0.658 |
+| vs R5C alone | +0.019 improvement |
+
+**Key insight:** Model improves weak regimes (split_3). Still struggles with regime inversion in 2026.
+
+---
+
+### Feature Groups (current universe)
+
+1. **HMM (R5C)** — `prob_bull`, `prob_bear`, `prob_side`, `entropy`, `days_in_state`, `allocation`
+2. **Macro (FRED)** — `walcl_zscore`, `yield_curve`, `cpi_vs_target`, `rate_expectation`
+3. **ETF flows** — `zscore`, `cumsum`, `trend`
+4. **CoinGlass (recent regime)** — `funding_zscore`, `oi_zscore`, `oi_price_ratio`, `oi_vol_ratio`
+5. **BTC technical (stationary)** — log returns, volatility, volume z-score, slope
+6. **(Optional) Order book** — microstructure / liquidity signals
+
+> Feature coverage varies by time window → handled in ablation study
+
+---
+
+### Concept Drift — Critical Finding (2026)
+
+**Observed regime inversion:**
+
+| Period | Macro signal | BTC direction |
+|---|---|---|
+| 2023–2025 | Bearish (tightening) | Bullish |
+| 2026 | Bearish (uncertainty) | Bearish |
+
+**Consequence:** A model trained on 2023–2025 patterns produces AUC < 0.5 on 2026 data — predictions are systematically inverted.
+
+**Definition:** *Concept drift / regime inversion* — the relationship between features and target reverses sign across market regimes. The feature is still informative; the direction is not stable.
+
+**Implication:** Do not assume feature usefulness is stable across policy regimes. Contextualization (hawkish/dovish flag) is required.
+
+---
+
+### Ablation 2026 Strategy
+
+**Window:** Train Sep/2025 → Dec/2025 | Test Jan/2026 → Mar/2026
+
+**Goal:** Identify which features work in the **current** regime (post-2025 drift).
+
+| Set | Features |
+|---|---|
+| A | BTC technical only |
+| B | A + HMM regime |
+| C | B + Macro |
+| D | C + ETF flows |
+| E | D + CoinGlass |
+| F | E + Order book |
+| G | F + Interaction terms |
+| G2 | G + Policy regime (hawkish flag) |
+| H | Selected features (post-ablation) |
+
+**Key principle:** Do not assume feature usefulness is stable across regimes.
+
+---
+
+### Current Hypothesis
+
+- Macro features require **contextualization by policy regime** (hawkish vs. dovish)
+- Same signal can invert depending on macro environment
+- CoinGlass (derivatives microstructure) likely critical for post-2025 regime
+- HMM provides structural decomposition but is not a sufficient decision signal alone
+
+---
+
+### Next Steps (as of 2026-03-23)
+
+1. Complete ablation study (2026-focused, Sets A → H)
+2. Add policy regime feature (hawkish/dovish binary from FRED)
+3. Add interaction terms (macro × regime)
+4. Re-train LightGBM with sample weighting (recency emphasis)
+5. Compare XGBoost with HMM vs. XGBoost without HMM
+6. Paper trading (30 days) vs. R11 baseline
+
+---
 
 ## Current Status
 
