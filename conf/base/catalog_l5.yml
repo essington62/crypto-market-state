@@ -14,3 +14,11 @@ btc_model_features_4h:
   filepath: data/05_model_features/4h/BTCUSDT.parquet
   save_args:
     compression: snappy
+
+# ── Control layer output (post-gate signals for backtesting) ──────────────────
+
+specialist_4h_controlled_signals:
+  type: kedro_datasets.pandas.ParquetDataset
+  filepath: data/05_model_output/specialist_4h/controlled_signals.parquet
+  save_args:
+    compression: snappy

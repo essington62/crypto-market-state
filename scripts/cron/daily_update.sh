@@ -60,6 +60,13 @@ fi
 
 echo "[$(date '+%H:%M:%S')] Credentials loaded ✓"
 
+# ── Update 1h candles ─────────────────────────
+echo "[$(date '+%H:%M:%S')] Updating 1h candles..."
+${PYTHON} ${PROJECT}/scripts/cron/update_1h_candles.py
+if [ $? -ne 0 ]; then
+    echo "[WARN] update_1h_candles FAILED — continuing"
+fi
+
 # ── BTC Spot ──────────────────────────────────
 echo "[$(date '+%H:%M:%S')] Running ingestion.binance.spot_incremental..."
 ${KEDRO} run --pipeline ingestion.binance.spot_incremental

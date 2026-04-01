@@ -124,6 +124,10 @@ from crypto_mkt_state.pipelines.modeling.entry_4h.pipeline import (
     create_pipeline as modeling_entry_4h_pipeline,
 )
 
+from crypto_mkt_state.pipelines.modeling.control_layer.pipeline import (
+    create_pipeline as modeling_control_layer_pipeline,
+)
+
 # ==================== REGISTER ====================
 
 
@@ -206,6 +210,8 @@ def register_pipelines() -> dict[str, Pipeline]:
     pipelines["modeling.regime_hmm"] = modeling_regime_hmm_pipeline()
 
     pipelines["modeling.entry_4h"] = modeling_entry_4h_pipeline()
+
+    pipelines["modeling.control_layer"] = modeling_control_layer_pipeline()
 
     # ==================== FULL FLOW ====================
 

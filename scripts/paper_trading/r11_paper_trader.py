@@ -1,3 +1,8 @@
+# DESATIVADO em 2026-03-31
+# R11 agora funciona exclusivamente como Layer 1 do Pipeline Integrado
+# (regime gate dentro do specialist_4h_paper_trader.py)
+# Dados históricos preservados em state/portfolio.json e state/equity_curve.csv
+
 """
 R11 Paper Trader — daily orchestrator for Binance Testnet.
 

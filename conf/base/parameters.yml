@@ -633,3 +633,30 @@ coinglass_indices:
 
     - name: cgdi_index
       value_col: cgdi_index
+
+# =====================================================
+
+modeling.control_layer:
+
+  control_layer:
+
+    regime_gate:
+      enabled: true
+      min_prob_bull: 0.30
+      max_entropy: 0.85
+
+    timing_gate:
+      enabled: true
+      min_score: 0.30
+      weights:
+        rsi: 0.4
+        bollinger: 0.3
+        volume: 0.3
+      rsi_threshold: 40
+      bb_threshold: 0.30
+
+    macro_gate:
+      enabled: false
+
+    derivatives_gate:
+      enabled: false
