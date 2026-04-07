@@ -79,3 +79,4 @@ credentials.yaml
 *.log.DS_Store
 
 
+.streamlit/secrets.toml

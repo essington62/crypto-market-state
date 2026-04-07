@@ -65,7 +65,8 @@ STATE_DIR    = _PT_DIR / "state" / "specialist_4h"
 CONFIG_JS    = STATE_DIR / "config.json"
 PORTFOLIO_JS = STATE_DIR / "portfolio.json"
 SIGNALS_CSV  = STATE_DIR / "signals.csv"
-BUFFER_4H = STATE_DIR / "ohlcv_4h_buffer.parquet"
+BUFFER_4H    = STATE_DIR / "ohlcv_4h_buffer.parquet"
+OHLCV_1H     = ROOT / "data" / "01_raw" / "spot" / "crypto" / "1h" / "BTCUSDT_1h.parquet"
 
 # ── Shared execution module ───────────────────────────────────────────────────
 import sys as _sys
@@ -334,8 +335,19 @@ def _compute_r11_features(df: pd.DataFrame) -> pd.DataFrame:
 # Group B — regime context feature computation
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _load_r5c_signal_generator(cfg: dict):
+    """Import R5CSignalGenerator from r5c_signal_generator.py via local import."""
+    r5c_model_path  = ROOT / cfg["r5c_model_path"]
+    sig_module_path = _PT_DIR / "r5c_signal_generator.py"
+    spec = importlib.util.spec_from_file_location("r5c_signal_generator", sig_module_path)
+    mod  = importlib.util.module_from_spec(spec)
+    sys.modules["r5c_signal_generator"] = mod
+    spec.loader.exec_module(mod)
+    return mod.R5CSignalGenerator(model_path=r5c_model_path)
+
+
 def _load_r11_signal_generator(cfg: dict):
-    """Import SignalGenerator from r11_signal_generator.py via local import."""
+    """Import SignalGenerator from r11_signal_generator.py via local import. (backup)"""
     r11_model_path  = ROOT / cfg["r11_model_path"]
     sig_module_path = _PT_DIR / "r11_signal_generator.py"
     spec = importlib.util.spec_from_file_location("r11_signal_generator", sig_module_path)
@@ -353,52 +365,48 @@ def _compute_group_b(
     """
     Compute Group B regime features for the current 4h candle.
 
-    r11_prob_bull : from R11 HMM run on fresh daily candles
-    r11_entropy   : -sum(p * log2(p)) computed from R11 probabilities
-    regime_age_log: log(1 + regime_age_days), tracked in portfolio state
-    stress_score  : last known value from L4 regime context (forward-filled)
+    Layer 1: R5C HMM (3 states — Bull/Sideways/Bear).
 
-    L5 day-shift contract: regime of day D is applied to 4h candles starting
-    D+1 00:00 UTC. Implemented by excluding daily candles with
-    open_time >= today UTC midnight.
+    Opção A (sem retreino): os nomes das features enviadas ao LightGBM mantêm-se
+    como r11_prob_bull, r11_entropy, regime_age_log, stress_score — mas os valores
+    vêm do R5C. Isso preserva compatibilidade com o modelo SET_B treinado.
+
+      r11_prob_bull  ← r5c_prob_bull  (ambos medem "bullishness")
+      r11_entropy    ← r5c_entropy    (fórmula com 3 estados, conceito similar)
+      regime_age_log ← mesma fórmula
+
+    Retorna também _r5c_regime, _r5c_prob_bull, _r5c_prob_bear, _r5c_prob_sideways
+    para portfolio state e display.
+
+    L5 day-shift contract: regime of day D applied to 4h candles starting D+1.
     """
-    limit      = int(cfg.get("r11_buffer_days", 200)) + 5
-    daily_df   = _fetch_1d_candles(limit=limit)
-    daily_feat = _compute_r11_features(daily_df)
+    limit    = int(cfg.get("r11_buffer_days", 200)) + 5
+    daily_df = _fetch_1d_candles(limit=limit)
 
-    gen = _load_r11_signal_generator(cfg)
+    gen = _load_r5c_signal_generator(cfg)
 
-    today_utc   = candle_close.normalize()
-    valid_daily = daily_feat[daily_feat.index < today_utc]
+    today_utc = candle_close.normalize()
+    # Day-shift: exclude today's candle (not closed yet)
+    daily_filtered = daily_df[daily_df.index < today_utc]
 
-    r11_features_list = gen.features
-    last_valid = valid_daily.dropna(subset=r11_features_list)
-    if last_valid.empty:
-        raise ValueError("[specialist_4h] No valid daily rows after day-shift filter.")
+    if len(daily_filtered) < 30:
+        raise ValueError("[specialist_4h] Not enough daily rows for R5C (day-shift filter).")
 
-    last_row = last_valid.iloc[-1]
-    signal   = gen.predict(
-        last_row,
-        signal_date=str(last_row.name.date()),
-        context_df=valid_daily,
-    )
+    signal = gen.predict(daily_filtered, proba_window=gen.proba_window)
 
-    r11_prob_bull = float(signal["p_bull"])
-    r11_prob_bear = float(signal["p_bear"])
+    r5c_prob_bull     = float(signal["prob_bull"])
+    r5c_prob_bear     = float(signal["prob_bear"])
+    r5c_prob_sideways = float(signal["prob_sideways"])
+    r5c_entropy       = float(signal["entropy"])
+    current_regime    = signal["regime"]   # "Bull" | "Sideways" | "Bear"
 
-    eps = 1e-9
-    r11_entropy = float(np.clip(
-        -(r11_prob_bull * np.log2(r11_prob_bull + eps) +
-          r11_prob_bear * np.log2(r11_prob_bear + eps)),
-        0.0, 1.0,
-    ))
-
-    current_regime  = signal["regime"]
-    prev_regime     = portfolio.get("r11_regime", current_regime)
+    # regime_age: track consecutive days in current regime
+    prev_regime     = portfolio.get("r5c_regime", portfolio.get("r11_regime", current_regime))
     regime_age_days = int(portfolio.get("regime_age_days", 0))
     regime_age_days = 1 if current_regime != prev_regime else regime_age_days + 1
     regime_age_log  = float(np.log1p(regime_age_days))
 
+    # stress_score: forward-filled from L4 (unchanged)
     l4_path      = ROOT / cfg["l4_regime_path"]
     stress_score = float(portfolio.get("last_stress_score", 0.0))
     if l4_path.exists():
@@ -413,13 +421,18 @@ def _compute_group_b(
             log.warning("[Group B] stress_score L4 read failed: %s — using last known", exc)
 
     return {
-        "r11_prob_bull":    r11_prob_bull,
-        "r11_entropy":      r11_entropy,
+        # Opção A: feature names for LightGBM model (unchanged from training)
+        "r11_prob_bull":    r5c_prob_bull,      # r5c_prob_bull mapped → r11_prob_bull
+        "r11_entropy":      r5c_entropy,         # r5c_entropy mapped → r11_entropy
         "regime_age_log":   regime_age_log,
         "stress_score":     stress_score,
-        "_r11_regime":      current_regime,
-        "_regime_age_days": regime_age_days,
-        "_stress_score":    stress_score,
+        # Private: R5C full context (portfolio state + display)
+        "_r5c_regime":         current_regime,
+        "_r5c_prob_bull":      r5c_prob_bull,
+        "_r5c_prob_bear":      r5c_prob_bear,
+        "_r5c_prob_sideways":  r5c_prob_sideways,
+        "_regime_age_days":    regime_age_days,
+        "_stress_score":       stress_score,
     }
 
 
@@ -514,41 +527,70 @@ def _apply_regime_gate(
     allocation: float,
     context:    dict,
     cfg:        dict,
-) -> tuple[float, bool]:
+) -> tuple[float, bool, str]:
     """
     Regime gate: block NEW entries when R11 indicates Bear/uncertain regime.
 
-    Logic:
-    - prob_bull < min_prob_bull  → BLOCK (Bear or uncertain regime)
-    - entropy   > max_entropy    → BLOCK (HMM without conviction)
-    - Both must pass to allow entry
+    Logic (3-state R5C):
+    - Bear regime OR prob_bear > max_prob_bear   → BLOCK (return 0)
+    - Sideways regime                            → allow full allocation (sizing reduced downstream)
+    - Bull regime                                → allow full
+    - entropy > max_entropy                      → BLOCK (no conviction)
+    - NaN in any indicator                       → BLOCK (safety)
 
+    Returns (allocation, triggered, regime_label).
     Does NOT affect open positions — let stop loss/gain handle exits.
-    NaN in any regime indicator → block by safety.
     """
-    prob_bull   = context.get("r11_prob_bull", float("nan"))
-    entropy     = context.get("r11_entropy",   float("nan"))
-    min_prob    = float(cfg.get("min_prob_bull", 0.30))
-    max_entropy = float(cfg.get("max_entropy",   0.85))
+    prob_bull     = context.get("r11_prob_bull", float("nan"))   # r5c_prob_bull mapped
+    r5c_regime    = context.get("_r5c_regime", None)
+    r5c_prob_bear = context.get("_r5c_prob_bear", float("nan"))
+    entropy       = context.get("r11_entropy",   float("nan"))
+
+    min_prob_bull       = float(cfg.get("min_prob_bull",           0.30))
+    max_prob_bear       = float(cfg.get("max_prob_bear",           0.60))
+    sideways_factor     = float(cfg.get("sideways_allocation_factor", 0.5))  # noqa: F841 — used in sizing
+    max_entropy         = float(cfg.get("max_entropy",             0.85))
 
     # If already in position, do not interfere
     if float(context.get("position_btc", 0.0)) > 1e-6:
-        return allocation, False
+        return allocation, False, ""
 
-    # NaN safety: block if any regime indicator is missing
+    # NaN safety
     if pd.isna(prob_bull) or pd.isna(entropy):
         log.warning("[regime_gate] NaN in regime indicators — blocking entry.")
-        return 0.0, True
+        return 0.0, True, ""
 
-    regime_ok = (prob_bull >= min_prob) and (entropy <= max_entropy)
-    if not regime_ok:
+    # Entropy check (no conviction)
+    if entropy > max_entropy:
+        log.info("[regime_gate] TRIGGERED — high entropy=%.3f (max=%.2f)", entropy, max_entropy)
+        return 0.0, True, ""
+
+    # 3-state logic
+    if r5c_regime == "Bear" or (not pd.isna(r5c_prob_bear) and r5c_prob_bear > max_prob_bear):
         log.info(
-            "[regime_gate] TRIGGERED — prob_bull=%.3f (min=%.2f)  entropy=%.3f (max=%.2f)",
-            prob_bull, min_prob, entropy, max_entropy,
+            "[regime_gate] TRIGGERED Bear — regime=%s prob_bear=%.3f (max=%.2f)",
+            r5c_regime, r5c_prob_bear if not pd.isna(r5c_prob_bear) else 0.0, max_prob_bear,
         )
-        return 0.0, True
+        return 0.0, True, "bear"
 
-    return allocation, False
+    if r5c_regime == "Sideways":
+        # Sideways: passa allocation integral ao specialist
+        # O fator de redução é aplicado no POSITION SIZING, não na decisão
+        # Isso permite que o modelo decida (threshold) e o gate ajuste o risco
+        log.info(
+            "[regime_gate] Sideways — passing allocation %.3f intact (sizing reduction applied downstream)",
+            allocation,
+        )
+        return allocation, False, "sideways"
+
+    # Bull (or r5c_regime unknown but prob_bull passes threshold)
+    if prob_bull < min_prob_bull:
+        log.info(
+            "[regime_gate] TRIGGERED — prob_bull=%.3f < min=%.2f", prob_bull, min_prob_bull,
+        )
+        return 0.0, True, ""
+
+    return allocation, False, "bull"
 
 
 def _apply_timing_gate(
@@ -651,7 +693,7 @@ def _apply_news_gate(
         return allocation, False
 
     # Stale check
-    updated_at_str = data.get("updated_at", "")
+    updated_at_str = data.get("impact_updated_at", data.get("updated_at", ""))
     if updated_at_str:
         try:
             updated_at = datetime.fromisoformat(updated_at_str)
@@ -666,66 +708,168 @@ def _apply_news_gate(
         except Exception:
             pass
 
-    # high_stress → block
+    # ── Nova estrutura: combined_news.4h.regime (Bull/Sideways/Bear) ──────────
+    #combined_news_4h = data.get("combined_news", {}).get("4h", {})
+    combined_news_4h = data.get("combined_news", data.get("combined", {})).get("4h", {})
+    news_regime      = combined_news_4h.get("regime", None)
+    news_score       = float(combined_news_4h.get("score", 0.0))
+
+    if news_regime is not None:
+        if news_regime == "BEAR" and news_score < -3:
+            log.info("[news_gate] TRIGGERED — news BEAR forte: score=%.2f", news_score)
+            return 0.0, True
+
+        if news_regime == "BEAR":
+            reduced = allocation * 0.5
+            log.info("[news_gate] news BEAR moderado: score=%.2f → alloc × 0.5 = %.3f", news_score, reduced)
+            return reduced, False
+
+        if news_regime == "BULL" and news_score > 3:
+            boosted = min(allocation * 1.15, 1.0)
+            log.info("[news_gate] news BULL boost: score=%.2f → alloc=%.3f", news_score, boosted)
+            return boosted, False
+
+        # SIDEWAYS → pass through
+        log.info("[news_gate] news regime=%s score=%.2f — pass through", news_regime, news_score)
+        return allocation, False
+
+    # ── Fallback: estrutura antiga (combined.4h.combined_score) ──────────────
     if data.get("high_stress", False):
         log.info("[news_gate] TRIGGERED — high_stress=True")
         return 0.0, True
 
-    # sentiment_4h threshold
-    sentiment_4h = float(data.get("4h", {}).get("sentiment_score", 0.0))
-    if sentiment_4h < min_sentiment:
-        log.info(
-            "[news_gate] TRIGGERED — sentiment_4h=%.3f < min=%.2f",
-            sentiment_4h, min_sentiment,
-        )
+    combined_4h    = data.get("combined", {}).get("4h", {})
+    combined_score = float(combined_4h.get("combined_score", 0.0)) if combined_4h else 0.0
+
+    if combined_score < -0.30:
+        log.info("[news_gate] TRIGGERED (fallback) — combined_score=%.3f", combined_score)
         return 0.0, True
 
-    # ── Score combinado (crypto + macro) — se disponível ─────────────────────
-    combined_4h      = data.get("combined", {}).get("4h", {})
-    combined_score   = float(combined_4h.get("combined_score", 0.0)) if combined_4h else None
-
-    if combined_score is not None and combined_score < -0.30:
-        log.info("[news_gate] TRIGGERED — combined_bearish: score=%.3f", combined_score)
-        return 0.0, True
-
-    # Macro stress alto → bloqueia mesmo se crypto neutro
     macro_4h     = data.get("macro", {}).get("4h", {})
-    macro_stress = float(macro_4h.get("macro_score", macro_4h.get("macro_stress_score", 0.0))) if macro_4h else None
+    macro_stress = float(macro_4h.get("macro_score", 0.0)) if macro_4h else 0.0
 
-    if macro_stress is not None and macro_stress < -0.50:
-        log.info("[news_gate] TRIGGERED — macro_stress_high: %.3f", macro_stress)
+    if macro_stress < -0.50:
+        log.info("[news_gate] TRIGGERED (fallback) — macro_stress=%.3f", macro_stress)
         return 0.0, True
-
-    # Macro bullish boost (+10%)
-    if macro_stress is not None and macro_stress > 0.30:
-        allocation = min(allocation * 1.10, 1.0)
-        log.info("[news_gate] macro_bullish_boost: stress=%.3f → alloc=%.3f", macro_stress, allocation)
-
-    # ── DeepSeek impact section (crypto) — escalation cluster / deescalation ──
-    impact_4h = data.get("impact", {}).get("4h", {})
-    if impact_4h:
-        impact_score       = float(impact_4h.get("impact_score", 0.0))
-        escalation_count   = int(impact_4h.get("escalation_count", 0))
-        deescalation_count = int(impact_4h.get("deescalation_count", 0))
-        high_count         = int(impact_4h.get("high_impact_count", 0))
-
-        # Escalation cluster (2+ HIGH ESCALATION) → bloqueia
-        if high_count >= 2 and escalation_count >= 2:
-            log.info(
-                "[news_gate] TRIGGERED — escalation_cluster: %d escalations, %d HIGH",
-                escalation_count, high_count,
-            )
-            return 0.0, True
-
-        # Deescalation boost (+15%) — deescalation dominante e score positivo
-        if deescalation_count >= 1 and impact_score > 3.0:
-            allocation = min(allocation * 1.15, 1.0)
-            log.info(
-                "[news_gate] deescalation_boost: deesc=%d score=%.2f → alloc=%.3f",
-                deescalation_count, impact_score, allocation,
-            )
 
     return allocation, False
+
+
+def _compute_technical_gate_features() -> dict:
+    """Calcular RSI 14 e BB %B 20 a partir dos candles 1h mais recentes."""
+    try:
+        df = pd.read_parquet(OHLCV_1H)
+        df.index = pd.to_datetime(df.index, utc=True)
+        df = df.sort_index()
+        close = df["close"].iloc[-50:]
+
+        # RSI 14
+        delta = close.diff()
+        gain  = delta.where(delta > 0, 0).rolling(14).mean()
+        loss  = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs    = gain / loss
+        rsi_14 = float((100 - (100 / (1 + rs))).iloc[-1])
+
+        # Bollinger Bands %B (20 períodos)
+        sma20   = close.rolling(20).mean()
+        std20   = close.rolling(20).std()
+        upper   = sma20 + 2 * std20
+        lower   = sma20 - 2 * std20
+        bb_pct_b = float(
+            (close.iloc[-1] - lower.iloc[-1]) / (upper.iloc[-1] - lower.iloc[-1])
+        )
+
+        return {"rsi_14": rsi_14, "bb_pct_b": bb_pct_b, "valid": True}
+    except Exception as exc:
+        log.warning("[tech_gate] Failed to compute features: %s — fail open", exc)
+        return {"rsi_14": 50.0, "bb_pct_b": 0.50, "valid": False}
+
+
+def _apply_technical_gate(
+    allocation: float,
+    context:    dict,
+    cfg:        dict,
+) -> tuple[float, bool, str, float, float]:
+    """
+    Gate técnico: RSI + BB %B combinados.
+    Bloqueia entradas no topo do range, reduz em zona alta,
+    boost em oversold. Não interfere em posições abertas.
+
+    Retorna (allocation_ajustada, triggered, reason, rsi_14, bb_pct_b).
+    """
+    _nan = float("nan")
+
+    # Do not interfere with open positions
+    if float(context.get("position_btc", 0.0)) > 1e-6:
+        return allocation, False, "in_position", _nan, _nan
+
+    # Already zeroed upstream — skip
+    if allocation <= 0:
+        return 0.0, False, "upstream_blocked", _nan, _nan
+
+    tg_cfg = cfg.get("control_layer", {}).get("technical_gate", {})
+    if not tg_cfg.get("enabled", True):
+        return allocation, False, "disabled", _nan, _nan
+
+    features = _compute_technical_gate_features()
+    rsi = features["rsi_14"]
+    bb  = features["bb_pct_b"]
+
+    rsi_block     = float(tg_cfg.get("rsi_block",          65))
+    rsi_reduce    = float(tg_cfg.get("rsi_reduce",         50))
+    rsi_boost     = float(tg_cfg.get("rsi_boost",          35))
+    rsi_strong    = float(tg_cfg.get("rsi_strong_boost",   30))
+    bb_block      = float(tg_cfg.get("bb_block",           0.75))
+    bb_reduce     = float(tg_cfg.get("bb_reduce",          0.50))
+    bb_boost      = float(tg_cfg.get("bb_boost",           0.25))
+    bb_strong     = float(tg_cfg.get("bb_strong_boost",    0.15))
+    reduce_factor = float(tg_cfg.get("reduce_factor",      0.7))
+    boost_factor  = float(tg_cfg.get("boost_factor",       1.2))
+    strong_factor = float(tg_cfg.get("strong_boost_factor",1.3))
+
+    log.info(
+        "[tech_gate] RSI=%.1f BB=%.2f (block: RSI>%.0f or BB>%.2f)",
+        rsi, bb, rsi_block, bb_block,
+    )
+
+    # BLOQUEIA: preço esticado
+    if rsi > rsi_block or bb > bb_block:
+        log.info(
+            "[tech_gate] BLOCKED — preço esticado (RSI=%.1f>%.0f or BB=%.2f>%.2f)",
+            rsi, rsi_block, bb, bb_block,
+        )
+        return 0.0, True, f"overbought_rsi{rsi:.0f}_bb{bb:.2f}", rsi, bb
+
+    # FORTE BOOST: fortemente oversold (ambas as condições)
+    if rsi < rsi_strong and bb < bb_strong:
+        boosted = min(allocation * strong_factor, 1.0)
+        log.info(
+            "[tech_gate] STRONG BOOST — oversold (RSI=%.1f BB=%.2f) alloc %.3f → %.3f",
+            rsi, bb, allocation, boosted,
+        )
+        return boosted, False, f"strong_oversold_rsi{rsi:.0f}_bb{bb:.2f}", rsi, bb
+
+    # BOOST: oversold (ambas)
+    if rsi < rsi_boost and bb < bb_boost:
+        boosted = min(allocation * boost_factor, 1.0)
+        log.info(
+            "[tech_gate] BOOST — oversold (RSI=%.1f BB=%.2f) alloc %.3f → %.3f",
+            rsi, bb, allocation, boosted,
+        )
+        return boosted, False, f"oversold_rsi{rsi:.0f}_bb{bb:.2f}", rsi, bb
+
+    # REDUZ: zona neutra/alta (ambas)
+    if rsi > rsi_reduce and bb > bb_reduce:
+        reduced = allocation * reduce_factor
+        log.info(
+            "[tech_gate] REDUCED — zona alta (RSI=%.1f BB=%.2f) alloc %.3f → %.3f",
+            rsi, bb, allocation, reduced,
+        )
+        return reduced, False, f"high_zone_rsi{rsi:.0f}_bb{bb:.2f}", rsi, bb
+
+    # NEUTRO: passa
+    log.info("[tech_gate] NEUTRAL — RSI=%.1f BB=%.2f — pass through", rsi, bb)
+    return allocation, False, f"neutral_rsi{rsi:.0f}_bb{bb:.2f}", rsi, bb
 
 
 def _apply_macro_gate(
@@ -771,6 +915,130 @@ def _apply_derivatives_gate(
     return allocation * multiplier, multiplier
 
 
+def _compute_entry_score(
+    allocation: float,
+    gate_log:   dict,
+    cfg:        dict,
+) -> dict:
+    """
+    Scoring system para decisão de entrada.
+    Cada condição contribui com um peso. Score >= threshold → enter.
+    Mais robusto que filtros AND (não precisa que todas as condições sejam perfeitas).
+
+    Se entry_scoring.enabled=False, usa threshold fixo (fallback).
+    Retorna: {"enter": bool, "score": float, "components": dict, "reason": str}
+    """
+    score_cfg = cfg.get("control_layer", {}).get("entry_scoring", {})
+    if not score_cfg.get("enabled", True):
+        threshold = float(cfg.get("control_layer", {}).get("entry_threshold", 0.38))
+        return {
+            "enter":      allocation > threshold,
+            "score":      allocation,
+            "components": {},
+            "reason":     "threshold_fixed",
+        }
+
+    min_score = float(score_cfg.get("min_score", 2.5))
+    components: dict = {}
+    total = 0.0
+
+    # ── 1. BB score (sinal dominante) ──
+    bb = gate_log.get("tech_gate_bb", 0.50)
+    import math as _math
+    if _math.isnan(bb):
+        bb = 0.50
+    if bb > 0.80:
+        bb_score = -2.0   # kill switch no topo (win 43%, ret negativo)
+    elif bb < 0.20:
+        bb_score = 3.0    # sinal forte (win 88%, ret_3d +1.75%)
+    elif bb < 0.30:
+        bb_score = 2.0    # sinal bom (win 77%, ret_3d +1.65%)
+    elif bb < 0.40:
+        bb_score = 0.5    # zona favorável mas fraca
+    else:
+        bb_score = 0.0
+    components["bb"] = bb_score
+    total += bb_score
+
+    # ── 2. RSI score (complementar) ──
+    rsi = gate_log.get("tech_gate_rsi", 50.0)
+    if _math.isnan(rsi):
+        rsi = 50.0
+    if rsi < 35:
+        rsi_score = 1.0
+    elif rsi < 45:
+        rsi_score = 0.5
+    elif rsi > 60:
+        rsi_score = -1.0
+    else:
+        rsi_score = 0.0
+    components["rsi"] = rsi_score
+    total += rsi_score
+
+    # ── 3. Alloc score (zona intermediária do specialist) ──
+    alloc_low      = float(score_cfg.get("alloc_low",      0.50))
+    alloc_high     = float(score_cfg.get("alloc_high",     0.54))
+    alloc_marginal = float(score_cfg.get("alloc_marginal", 0.48))
+    if alloc_low <= allocation <= alloc_high:
+        alloc_score = 0.5   # fraco — alloc não tem edge forte
+    elif alloc_marginal <= allocation < alloc_low:
+        alloc_score = 0.25
+    else:
+        alloc_score = 0.0
+    components["alloc"] = alloc_score
+    total += alloc_score
+
+    # ── 4. News score ──
+    try:
+        import json as _json
+        with open(SENTIMENT_PATH) as _f:
+            _metrics = _json.load(_f)
+        _combined     = _metrics.get("combined", {}).get("4h", {})
+        news_regime   = _combined.get("regime", "SIDEWAYS")
+        news_score_val = float(_combined.get("combined_score", 0))
+    except Exception:
+        news_regime    = "SIDEWAYS"
+        news_score_val = 0.0
+
+    if news_regime == "BULL" and news_score_val > 3:
+        news_score = 1.0
+    elif news_regime == "BULL":
+        news_score = 0.5
+    elif news_regime == "BEAR" and news_score_val < -3:
+        news_score = -1.5
+    elif news_regime == "BEAR":
+        news_score = -0.5
+    else:
+        news_score = 0.0
+    components["news"] = news_score
+    total += news_score
+
+    # ── Decisão ──
+    enter = total >= min_score
+
+    # Regime check (hard block)
+    if gate_log.get("regime_gate_regime", "").lower() == "bear":
+        enter = False
+        total = -99.0
+        components["regime_block"] = True
+
+    reason_parts = [f"{k}={v:+.1f}" for k, v in components.items() if isinstance(v, (int, float))]
+    reason = f"score={total:.1f} ({' '.join(reason_parts)}) {'ENTER' if enter else 'HOLD'}"
+
+    log.info(
+        "[entry_score] total=%.1f (bb=%.1f rsi=%.1f alloc=%.1f news=%.1f) min=%.1f → %s",
+        total, bb_score, rsi_score, alloc_score, news_score, min_score,
+        "ENTER" if enter else "HOLD",
+    )
+
+    return {
+        "enter":      enter,
+        "score":      total,
+        "components": components,
+        "reason":     reason,
+    }
+
+
 def apply_control_layer(
     allocation_raw: float,
     context:        dict,
@@ -795,11 +1063,22 @@ def apply_control_layer(
         "stop_loss_triggered":    False,
         "stop_gain_triggered":    False,
         "regime_gate_triggered":  False,
+        "regime_gate_regime":     "",
         "timing_context_score":   None,
         "timing_gate_active":     False,
-        "news_gate_triggered":    False,
-        "macro_gate_multiplier":  1.0,
-        "deriv_gate_multiplier":  1.0,
+        "news_gate_triggered":        False,
+        "technical_gate_triggered":   False,
+        "technical_gate_reason":      "",
+        "tech_gate_rsi":              float("nan"),
+        "tech_gate_bb":               float("nan"),
+        "entry_score_total":          float("nan"),
+        "entry_score_bb":             float("nan"),
+        "entry_score_rsi":            float("nan"),
+        "entry_score_alloc":          float("nan"),
+        "entry_score_news":           float("nan"),
+        "entry_score_reason":         "",
+        "macro_gate_multiplier":      1.0,
+        "deriv_gate_multiplier":      1.0,
     }
     cl = config.get("control_layer", {})
 
@@ -820,8 +1099,9 @@ def apply_control_layer(
     # ── Phase 2: Regime Gate (hard filter — Bear / uncertain regime) ──────────
     rg_cfg = cl.get("regime_gate", {})
     if rg_cfg.get("enabled", False):
-        allocation, triggered = _apply_regime_gate(allocation, context, rg_cfg)
+        allocation, triggered, rg_regime = _apply_regime_gate(allocation, context, rg_cfg)
         gate_log["regime_gate_triggered"] = triggered
+        gate_log["regime_gate_regime"]    = rg_regime
 
     # ── Phase 3: Timing Gate — desativado no specialist (executado apenas no monitor 1h)
     timing_score = None  # noqa: F841  (preservado para referência; avaliado no monitor 1h)
@@ -834,13 +1114,22 @@ def apply_control_layer(
         allocation, triggered = _apply_news_gate(allocation, context, ng_cfg)
         gate_log["news_gate_triggered"] = triggered
 
-    # ── Phase 5: Macro Gate (stub) ────────────────────────────────────────────
+    # ── Phase 5: Technical Gate (RSI + BB) ───────────────────────────────────
+    allocation, tg_triggered, tg_reason, tg_rsi, tg_bb = _apply_technical_gate(
+        allocation, context, cl
+    )
+    gate_log["technical_gate_triggered"] = tg_triggered
+    gate_log["technical_gate_reason"]    = tg_reason
+    gate_log["tech_gate_rsi"]            = tg_rsi
+    gate_log["tech_gate_bb"]             = tg_bb
+
+    # ── Phase 6: Macro Gate (stub) ────────────────────────────────────────────
     mg_cfg = cl.get("macro_gate", {})
     if mg_cfg.get("enabled", False):
         allocation, mult = _apply_macro_gate(allocation, context, mg_cfg)
         gate_log["macro_gate_multiplier"] = mult
 
-    # ── Phase 6: Derivatives Gate (stub) ─────────────────────────────────────
+    # ── Phase 7: Derivatives Gate (stub) ─────────────────────────────────────
     dg_cfg = cl.get("derivatives_gate", {})
     if dg_cfg.get("enabled", False):
         allocation, mult = _apply_derivatives_gate(allocation, context, dg_cfg)
@@ -863,7 +1152,10 @@ def _load_portfolio(cfg: dict) -> dict:
         "total_usdt":              initial,
         "btc_price":               0.0,
         "position_pct":            0.0,
-        "r11_regime":              "Bear",
+        "r5c_regime":              "Bear",
+        "r5c_prob_bull":           0.0,
+        "r5c_prob_bear":           1.0,
+        "r5c_prob_sideways":       0.0,
         "regime_age_days":         0,
         "last_stress_score":       0.0,
         "last_update":             "",
@@ -1060,6 +1352,11 @@ def run_4h(status_only: bool = False) -> None:
         "current_time":             candle_ts,
         "stop_loss_cooldown_until": cooldown_ts,
         "position_btc":             float(portfolio.get("btc_held", 0.0)),
+        # R5C regime context (used by 3-state regime gate)
+        "_r5c_regime":      group_b["_r5c_regime"],
+        "_r5c_prob_bear":   group_b["_r5c_prob_bear"],
+        "_r5c_prob_bull":   group_b["_r5c_prob_bull"],
+        "_r5c_prob_sideways": group_b["_r5c_prob_sideways"],
         **features_row,
         **timing_indicators,
     }
@@ -1073,6 +1370,20 @@ def run_4h(status_only: bool = False) -> None:
         target_exposure = min(target_exposure, 1.0)
     else:
         target_exposure = 0.0
+
+    # ── Sideways sizing reduction ──
+    # Se regime Sideways, reduz exposição mas NÃO bloqueia entrada
+    if gate_log.get("regime_gate_regime") == "sideways" and target_exposure > 0:
+        _sw_factor  = float(cfg.get("control_layer", {})
+                               .get("regime_gate", {})
+                               .get("sideways_allocation_factor", 0.5))
+        _original   = target_exposure
+        target_exposure = target_exposure * _sw_factor
+        log.info(
+            "[sizing] Sideways factor %.1f applied: exposure %.1f%% → %.1f%%",
+            _sw_factor, _original * 100, target_exposure * 100,
+        )
+
     current_exposure = portfolio["position_pct"]
     delta            = abs(target_exposure - current_exposure)
 
@@ -1127,32 +1438,64 @@ def run_4h(status_only: bool = False) -> None:
                 delta_alloc = portfolio["position_pct"] - _pre["position_pct"]
         elif delta >= min_delta:
             if not was_long and target_exposure > 0:
-                # New entry → delegate to timing layer via pending_signal.json
-                try:
-                    _nd = json.loads(SENTIMENT_PATH.read_text()) if SENTIMENT_PATH.exists() else {}
-                    _news_sent = float(_nd.get("4h", {}).get("sentiment_score", 0.0))
-                except Exception:
-                    _news_sent = None
-                _save_pending_signal({
-                    "has_pending": True,
-                    "allocation_raw": round(allocation_raw, 6),
-                    "allocation_final": round(allocation_final, 6),
-                    "specialist_candle": candle_ts.isoformat(),
-                    "specialist_price": round(btc_price, 2),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "expires_at": (candle_ts + timedelta(hours=4)).isoformat(),
-                    "r11_prob_bull": round(group_b["r11_prob_bull"], 6),
-                    "r11_regime": group_b["_r11_regime"],
-                    "news_sentiment_4h": _news_sent,
-                    "regime_gate_passed": not gate_log["regime_gate_triggered"],
-                    "news_gate_passed": not gate_log["news_gate_triggered"],
-                })
-                action = "PENDING"
-                log.info(
-                    "[SPECIALIST] PENDING ENTRY: alloc=%.3f price=$%.2f expires=%s",
-                    allocation_final, btc_price,
-                    (candle_ts + timedelta(hours=4)).isoformat(),
-                )
+                # ── Entry scoring: BB + RSI + alloc + news ───────────────────
+                entry = _compute_entry_score(allocation_final, gate_log, cfg)
+                gate_log["entry_score_total"] = entry["score"]
+                gate_log["entry_score_bb"]    = entry["components"].get("bb",    float("nan"))
+                gate_log["entry_score_rsi"]   = entry["components"].get("rsi",   float("nan"))
+                gate_log["entry_score_alloc"] = entry["components"].get("alloc", float("nan"))
+                gate_log["entry_score_news"]  = entry["components"].get("news",  float("nan"))
+                gate_log["entry_score_reason"] = entry["reason"]
+                log.info("[entry] %s", entry["reason"])
+
+                if entry["enter"]:
+                    # ── Score-based position sizing ──────────────────────────
+                    _score = entry["score"]
+                    if _score >= 3.5:
+                        _size_mult = 1.2
+                    elif _score >= 2.5:
+                        _size_mult = 1.0
+                    else:
+                        _size_mult = 0.8
+                    target_exposure = min(target_exposure * _size_mult, 1.0)
+                    log.info(
+                        "[sizing] score=%.1f → size_mult=%.1f  exposure=%.1f%%",
+                        _score, _size_mult, target_exposure * 100,
+                    )
+
+                    # New entry → delegate to timing layer via pending_signal.json
+                    try:
+                        _nd = json.loads(SENTIMENT_PATH.read_text()) if SENTIMENT_PATH.exists() else {}
+                        _news_sent = float(_nd.get("4h", {}).get("sentiment_score", 0.0))
+                    except Exception:
+                        _news_sent = None
+                    _save_pending_signal({
+                        "has_pending": True,
+                        "allocation_raw": round(allocation_raw, 6),
+                        "allocation_final": round(allocation_final, 6),
+                        "specialist_candle": candle_ts.isoformat(),
+                        "specialist_price": round(btc_price, 2),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "expires_at": (candle_ts + timedelta(hours=4)).isoformat(),
+                        "r5c_prob_bull": round(group_b["_r5c_prob_bull"], 6),
+                        "r5c_prob_bear": round(group_b["_r5c_prob_bear"], 6),
+                        "r5c_prob_sideways": round(group_b["_r5c_prob_sideways"], 6),
+                        "r5c_regime": group_b["_r5c_regime"],
+                        # legacy aliases for backward compat with monitor/dashboard
+                        "r11_prob_bull": round(group_b["_r5c_prob_bull"], 6),
+                        "r11_regime": group_b["_r5c_regime"],
+                        "news_sentiment_4h": _news_sent,
+                        "regime_gate_passed": not gate_log["regime_gate_triggered"],
+                        "news_gate_passed": not gate_log["news_gate_triggered"],
+                    })
+                    action = "PENDING"
+                    log.info(
+                        "[SPECIALIST] PENDING ENTRY: alloc=%.3f price=$%.2f expires=%s",
+                        allocation_final, btc_price,
+                        (candle_ts + timedelta(hours=4)).isoformat(),
+                    )
+                else:
+                    log.info("[SPECIALIST] Entry filtered: %s", entry["reason"])
             else:
                 # Exit (was_long, target=0) or position scaling (was_long, target>0)
                 _pre = portfolio.copy()
@@ -1222,7 +1565,10 @@ def run_4h(status_only: bool = False) -> None:
             log.info("Take profit: no cooldown applied — can re-enter next candle")
 
         portfolio["last_update"]       = candle_ts.isoformat()
-        portfolio["r11_regime"]        = group_b["_r11_regime"]
+        portfolio["r5c_regime"]        = group_b["_r5c_regime"]
+        portfolio["r5c_prob_bull"]     = group_b["_r5c_prob_bull"]
+        portfolio["r5c_prob_bear"]     = group_b["_r5c_prob_bear"]
+        portfolio["r5c_prob_sideways"] = group_b["_r5c_prob_sideways"]
         portfolio["regime_age_days"]   = group_b["_regime_age_days"]
         portfolio["last_stress_score"] = group_b["_stress_score"]
         _save_portfolio(portfolio)
@@ -1264,6 +1610,27 @@ def run_4h(status_only: bool = False) -> None:
             "bb_pct_b":              round(timing_indicators["bb_pct_b"], 4)
                                      if not pd.isna(timing_indicators["bb_pct_b"]) else "",
             "news_gate_triggered":   gate_log["news_gate_triggered"],
+            "tech_gate_triggered":   gate_log["technical_gate_triggered"],
+            "tech_gate_rsi":         round(gate_log["tech_gate_rsi"], 2)
+                                     if not pd.isna(gate_log["tech_gate_rsi"]) else "",
+            "tech_gate_bb":          round(gate_log["tech_gate_bb"], 4)
+                                     if not pd.isna(gate_log["tech_gate_bb"]) else "",
+            "tech_gate_reason":      gate_log["technical_gate_reason"],
+            "entry_score_total":     round(gate_log.get("entry_score_total", float("nan")), 2)
+                                     if not pd.isna(gate_log.get("entry_score_total", float("nan"))) else "",
+            "entry_score_bb":        round(gate_log.get("entry_score_bb",    float("nan")), 1)
+                                     if not pd.isna(gate_log.get("entry_score_bb",    float("nan"))) else "",
+            "entry_score_rsi":       round(gate_log.get("entry_score_rsi",   float("nan")), 1)
+                                     if not pd.isna(gate_log.get("entry_score_rsi",   float("nan"))) else "",
+            "entry_score_alloc":     round(gate_log.get("entry_score_alloc", float("nan")), 1)
+                                     if not pd.isna(gate_log.get("entry_score_alloc", float("nan"))) else "",
+            "entry_score_news":      round(gate_log.get("entry_score_news",  float("nan")), 1)
+                                     if not pd.isna(gate_log.get("entry_score_news",  float("nan"))) else "",
+            "entry_score_reason":    gate_log.get("entry_score_reason", ""),
+            "entry_rsi":             round(gate_log["tech_gate_rsi"], 2)
+                                     if not pd.isna(gate_log.get("tech_gate_rsi", float("nan"))) else "",
+            "entry_prev_ret":        round(features_row.get("returns_4h", float("nan")), 6)
+                                     if not pd.isna(features_row.get("returns_4h", float("nan"))) else "",
             "macro_gate_mult":       round(gate_log["macro_gate_multiplier"], 4),
             "deriv_gate_mult":       round(gate_log["deriv_gate_multiplier"], 4),
             "entry_price":           round(float(ep), 2) if ep else "",
@@ -1325,6 +1692,15 @@ def _print_report(
     log.info("    regime_gate    : triggered=%s",  gate_log["regime_gate_triggered"])
     log.info("    timing_gate    : disabled in specialist (monitor 1h only)")
     log.info("    news_gate      : triggered=%s",  gate_log["news_gate_triggered"])
+    log.info("    technical_gate : triggered=%s  reason=%s",
+             gate_log["technical_gate_triggered"], gate_log.get("technical_gate_reason", ""))
+    log.info("    entry_score    : total=%.1f (bb=%.1f rsi=%.1f alloc=%.1f news=%.1f) → %s",
+             gate_log.get("entry_score_total", float("nan")),
+             gate_log.get("entry_score_bb",    float("nan")),
+             gate_log.get("entry_score_rsi",   float("nan")),
+             gate_log.get("entry_score_alloc", float("nan")),
+             gate_log.get("entry_score_news",  float("nan")),
+             "ENTER" if gate_log.get("entry_score_total", -99) >= 2.0 else "HOLD")
     log.info("    macro_gate     : mult=%.4f",     gate_log["macro_gate_multiplier"])
     log.info("    deriv_gate     : mult=%.4f",     gate_log["deriv_gate_multiplier"])
     ep = portfolio.get("entry_price")
@@ -1340,10 +1716,12 @@ def _print_report(
     log.info("    buy_pressure  : %.4f",  features_row["buy_pressure"])
     log.info("    price_range_4h: %.6f", features_row["price_range_4h"])
     log.info("")
-    log.info("  Group B (regime):")
-    log.info("    r11_regime    : %s",    group_b["_r11_regime"])
-    log.info("    r11_prob_bull : %.4f",  group_b["r11_prob_bull"])
-    log.info("    r11_entropy   : %.4f",  group_b["r11_entropy"])
+    log.info("  Group B (R5C regime):")
+    log.info("    r5c_regime    : %s",    group_b["_r5c_regime"])
+    log.info("    prob_bull     : %.4f",  group_b["_r5c_prob_bull"])
+    log.info("    prob_bear     : %.4f",  group_b["_r5c_prob_bear"])
+    log.info("    prob_sideways : %.4f",  group_b["_r5c_prob_sideways"])
+    log.info("    r11_entropy   : %.4f (mapped from r5c_entropy)", group_b["r11_entropy"])
     log.info("    regime_age_log: %.4f (days=%d)",
              group_b["regime_age_log"], group_b["_regime_age_days"])
     log.info("    stress_score  : %.1f",  group_b["stress_score"])

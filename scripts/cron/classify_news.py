@@ -55,8 +55,8 @@ CLASSIFY_WINDOW = 6    # horas — janela de notícias a classificar
 MAX_ITEMS       = 30   # max por chamada de API
 
 DS_COLS = [
-    "ds_classified", "ds_topic", "ds_event_type",
-    "ds_impact", "ds_score", "ds_direction",
+    "ds_classified", "ds_topic", "ds_regime",
+    "ds_impact", "ds_score",
     "ds_reason", "ds_classified_at",
 ]
 
@@ -100,53 +100,49 @@ MACRO_RELEVANCE_KEYWORDS = [
     "opec", "saudi", "gas price",
 ]
 
-# ── Prompt unificado [CRYPTO]/[MACRO] ─────────────────────────────────────────
-CLASSIFY_PROMPT = """You are a senior risk analyst for Bitcoin trading.
+# ── Prompt unificado Bull/Sideways/Bear — alinhado com R5C ────────────────────
+CLASSIFY_PROMPT = """Você é um analista sênior de trading de Bitcoin.
 
-MAIN RULE: Classify by the FINAL RESULT of the event on Bitcoin price, NOT by individual words.
-Examples:
-- "Trump signals end of Iran war" -> DEESCALATION -> score +7 (end of war = risk-on = BTC rises)
-- "Trump threatens ground invasion of Iran" -> ESCALATION -> score -8 (war escalates = risk-off)
-- "Fed signals rate cut" -> POLICY_SHIFT -> score +6 (rates fall = liquidity = BTC rises)
-- "Investors pull $414M from crypto funds" -> CAPITAL_FLOW -> score -5 (outflow = selling pressure)
-- "Google warns quantum threatens crypto" -> NOISE -> score 0 (no immediate price impact)
+Classifique cada notícia pelo IMPACTO REAL no preço do Bitcoin usando 3 categorias:
 
-IMPACT RULE:
-- HIGH: any event that shifts macro narrative (war, peace, Fed decision, tariff, national ban).
-  ALWAYS HIGH if involves Trump+war, Fed+rate, or national regulation.
-- MEDIUM: significant but does not shift narrative (ETF flow, miner sell-off, whale move)
-- LOW: informative, analysis, forecast, opinion
+BULL (score +3 a +10): Notícia claramente positiva para o preço do BTC.
+  Exemplos: ceasefire/paz, rate cut, ETF aprovado, compras institucionais, adoção.
 
-ATTENTION for news tagged [MACRO]:
-These do not mention BTC directly. Classify by INDIRECT impact via causal chain:
-- Oil rises -> inflation -> higher rates -> risk-off -> BTC falls
-- War escalates -> risk-off -> flight to safety -> BTC falls (short term)
-- Fed dovish -> liquidity -> risk-on -> BTC rises
-- Recession -> context-dependent: risk-off (BTC falls) or digital gold (BTC rises)
-Same score scale applies to both [CRYPTO] and [MACRO].
+SIDEWAYS (score -2 a +2): Notícia mista, incerta, contraditória ou já precificada.
+  Exemplos: "Trump mixes threats and talks", profit taking após rally,
+  incerteza sem direção clara, análise/opinião sem novo fato.
+  REGRA: Se a notícia contém TANTO sinais positivos QUANTO negativos → SIDEWAYS.
+  REGRA: Se o BTC está SUBINDO apesar de notícia negativa → mercado precificou → SIDEWAYS.
+  REGRA: Profit taking após rally → SIDEWAYS +1 (saudável, não bearish).
 
-Classify each news item. Reply ONLY in valid JSON, no markdown, no explanation:
+BEAR (score -3 a -10): Notícia claramente negativa para o preço do BTC.
+  Exemplos: guerra escala sem negociação, rate hike, hack, ban, sell-off forçado.
+
+IMPORTANTE:
+- Classifique pelo RESULTADO FINAL no preço, não pelas palavras isoladas.
+- "War" + "ceasefire" na mesma notícia = SIDEWAYS (contraditório).
+- Preço subindo + notícia "uncertain" = SIDEWAYS (mercado resiliente).
+- Impacto HIGH se muda narrativa macro (guerra/paz, Fed, regulação nacional).
+- Impacto MEDIUM se evento significativo mas não muda narrativa.
+- Impacto LOW se opinião, análise, ou genérico.
+- Para notícias [MACRO]: classifique pelo impacto INDIRETO via causal chain.
+  Oil sobe → inflação → juros sobem → risk-off → BTC cai (BEAR)
+  Ceasefire → risk-on → BTC sobe (BULL)
+  Fed dovish → liquidez → BTC sobe (BULL)
+
+Responda APENAS em JSON válido, sem markdown:
 [
   {{
     "index": 0,
-    "topic": "geopolitical_war|trump_policy|fed_monetary|institutional_btc|oil_energy|regulatory|market_stress|mining|noise",
-    "event_type": "ESCALATION|DEESCALATION|POLICY_SHIFT|CAPITAL_FLOW|MARKET_SHOCK|DATA_RELEASE|INSTITUTIONAL_MOVE|NOISE",
+    "regime": "BULL|SIDEWAYS|BEAR",
     "impact": "HIGH|MEDIUM|LOW",
-    "score": integer from -10 to +10,
-    "reason": "max 8 words, ASCII only"
+    "score": -10 a +10,
+    "topic": "geopolitical_war|trump_policy|fed_monetary|institutional_btc|oil_energy|regulatory|market_stress|mining|noise",
+    "reason": "máximo 8 palavras"
   }}
 ]
 
-Score scale:
-+7 to +10: shifts entire narrative bullish
-+3 to +6: significant upside pressure
-+1 to +2: slight positive
-0: neutral/irrelevant
--1 to -2: slight negative
--3 to -6: significant downside pressure
--7 to -10: shifts entire narrative bearish
-
-NEWS (classify ALL):
+NOTÍCIAS:
 {news_list}
 """
 
@@ -178,12 +174,13 @@ def macro_relevance_filter(title: str) -> bool:
     return any(kw in title_lower for kw in MACRO_RELEVANCE_KEYWORDS)
 
 
-def _derive_direction(score: float) -> str:
-    if score >= 2:
-        return "BULLISH"
-    if score <= -2:
-        return "BEARISH"
-    return "NEUTRAL"
+def _derive_regime_from_score(score: float) -> str:
+    """Derive regime from score (fallback when DeepSeek doesn't return regime field)."""
+    if score >= 3:
+        return "BULL"
+    if score <= -3:
+        return "BEAR"
+    return "SIDEWAYS"
 
 
 def _load_api_key() -> str | None:
@@ -417,6 +414,7 @@ def _compute_combined(crypto_score: float, macro_score: float, weights: dict) ->
         "crypto_score":    crypto_score,
         "macro_score":     macro_score,
         "combined_score":  float(combined),
+        "regime":          _derive_regime_from_score(float(combined)),
         "weights":         {"macro_weight": mw, "crypto_weight": cw},
         "dominant_driver": "macro" if abs(macro_score) > abs(crypto_score) else "crypto",
     }
@@ -480,8 +478,10 @@ def _update_metrics(
         )
         combined_all[key] = combined
 
+        _crypto_score = crypto_imp.get("crypto_score", 0.0)
         metrics.setdefault("impact", {})[key] = {
-            "crypto_score":        crypto_imp.get("crypto_score", 0.0),
+            "crypto_score":        _crypto_score,
+            "regime":              _derive_regime_from_score(_crypto_score),
             "high_impact_count":   crypto_imp.get("high_impact_count", 0),
             "escalation_count":    crypto_imp.get("escalation_count", 0),
             "deescalation_count":  crypto_imp.get("deescalation_count", 0),
@@ -490,8 +490,10 @@ def _update_metrics(
             "top_stories":         crypto_imp.get("top_stories", []),
         }
 
+        _macro_score = macro_imp.get("macro_score", 0.0)
         metrics.setdefault("macro", {})[key] = {
-            "macro_score":        macro_imp.get("macro_score", 0.0),
+            "macro_score":        _macro_score,
+            "regime":             _derive_regime_from_score(_macro_score),
             "news_count":         macro_imp.get("news_count", 0),
             "escalation_count":   macro_imp.get("escalation_count", 0),
             "deescalation_count": macro_imp.get("deescalation_count", 0),
@@ -639,7 +641,7 @@ def main():
             df.loc[mask, "ds_event_type"]   = str(cls.get("event_type", "NOISE"))
             df.loc[mask, "ds_impact"]       = str(cls.get("impact", "LOW"))
             df.loc[mask, "ds_score"]        = score
-            df.loc[mask, "ds_direction"]    = _derive_direction(score)
+            df.loc[mask, "ds_regime"]       = _derive_regime_from_score(score)
             df.loc[mask, "ds_reason"]       = str(cls.get("reason", ""))[:120]
             df.loc[mask, "ds_classified_at"] = classified_at
             updated += 1
